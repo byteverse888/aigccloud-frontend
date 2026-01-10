@@ -480,17 +480,21 @@ export async function checkFollowing(followerId: string, followingId: string) {
 
 // ============ 分页查询接口 ============
 
-export const getUserFavorites = (userId: string, page = 1, limit = 20) =>
-  paginatedQuery('Favorite', { userId }, page, limit);
+export async function getUserFavorites(userId: string, page = 1, limit = 20) {
+  return paginatedQuery('Favorite', { userId }, page, limit);
+}
 
-export const getUserFollowing = (userId: string, page = 1, limit = 20) =>
-  paginatedQuery('Follow', { followerId: userId }, page, limit);
+export async function getUserFollowing(userId: string, page = 1, limit = 20) {
+  return paginatedQuery('Follow', { followerId: userId }, page, limit);
+}
 
-export const getUserFollowers = (userId: string, page = 1, limit = 20) =>
-  paginatedQuery('Follow', { followingId: userId }, page, limit);
+export async function getUserFollowers(userId: string, page = 1, limit = 20) {
+  return paginatedQuery('Follow', { followingId: userId }, page, limit);
+}
 
-export const getComments = (productId: string, page = 1, limit = 20) =>
-  paginatedQuery('Comment', { productId, parentId: null }, page, limit);
+export async function getComments(productId: string, page = 1, limit = 20) {
+  return paginatedQuery('Comment', { productId, parentId: null }, page, limit);
+}
 
 // ============ 评论 ============
 
@@ -547,7 +551,9 @@ export async function getProducts(options?: { category?: string; search?: string
   return paginatedQuery<Product>('Product', where, page, limit, order);
 }
 
-export const getProductById = (productId: string) => getObject('Product', productId);
+export async function getProductById(productId: string) {
+  return getObject('Product', productId);
+}
 
 // ============ 资产 ============
 
@@ -611,7 +617,9 @@ export async function createAITask(task: Omit<AITask, 'objectId' | 'createdAt'>)
   return createObject('AITask', task);
 }
 
-export const getAITask = (taskId: string) => getObject('AITask', taskId);
+export async function getAITask(taskId: string) {
+  return getObject('AITask', taskId);
+}
 
 export async function getUserAITasks(userId: string, options?: { type?: string; status?: number; page?: number; limit?: number }) {
   const where: Record<string, unknown> = { designer: userId };
