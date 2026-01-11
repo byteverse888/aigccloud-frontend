@@ -136,3 +136,22 @@ export const useAICreationStore = create<AICreationState>()((set) => ({
     currentTask: state.currentTask ? { ...state.currentTask, status, result, error } : null,
   })),
 }));
+
+// ============ Wallet Store (仅内存，不持久化) ============
+
+interface WalletState {
+  privateKey: string | null;  // 私钥（仅内存，不持久化）
+  walletType: 'metamask' | 'privateKey' | 'mnemonic' | null;  // 登录方式
+  setPrivateKey: (privateKey: string | null) => void;
+  setWalletType: (type: 'metamask' | 'privateKey' | 'mnemonic' | null) => void;
+  clearWallet: () => void;
+}
+
+// 注意：不使用 persist，私钥仅保存在内存中，刷新页面后会清除
+export const useWalletStore = create<WalletState>()((set) => ({
+  privateKey: null,
+  walletType: null,
+  setPrivateKey: (privateKey: string | null) => set({ privateKey }),
+  setWalletType: (walletType: 'metamask' | 'privateKey' | 'mnemonic' | null) => set({ walletType }),
+  clearWallet: () => set({ privateKey: null, walletType: null }),
+}));

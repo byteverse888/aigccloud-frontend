@@ -67,6 +67,78 @@ export const authApi = {
       method: 'POST',
       body: JSON.stringify({ username, password }),
     }),
+
+  // Web3 认证
+  web3Init: (address: string) =>
+    fetchApi<{
+      success: boolean;
+      nonce: string;
+      message: string;
+      address: string;
+    }>('/api/v1/auth/web3/init', {
+      method: 'POST',
+      body: JSON.stringify({ address }),
+    }),
+
+  // Web3 注册
+  web3Register: (address: string, signature: string, message: string, password: string) =>
+    fetchApi<{
+      success: boolean;
+      token: string;
+      user: {
+        objectId: string;
+        username: string;
+        email?: string;
+        phone?: string;
+        role: string;
+        level: number;
+        isPaid: boolean;
+        coins: number;
+        avatar?: string;
+        avatarKey?: string;
+        web3Address: string;
+        inviteCount: number;
+      };
+      parse_config: {
+        serverUrl: string;
+        appId: string;
+      };
+      is_new_user: boolean;
+      message: string;
+    }>('/api/v1/auth/web3/register', {
+      method: 'POST',
+      body: JSON.stringify({ address, signature, message, password }),
+    }),
+
+  // Web3 登录
+  web3Login: (address: string, signature: string, message: string, password: string) =>
+    fetchApi<{
+      success: boolean;
+      token: string;
+      user: {
+        objectId: string;
+        username: string;
+        email?: string;
+        phone?: string;
+        role: string;
+        level: number;
+        isPaid: boolean;
+        coins: number;
+        avatar?: string;
+        avatarKey?: string;
+        web3Address: string;
+        inviteCount: number;
+      };
+      parse_config: {
+        serverUrl: string;
+        appId: string;
+      };
+      is_new_user: boolean;
+      message: string;
+    }>('/api/v1/auth/web3/login', {
+      method: 'POST',
+      body: JSON.stringify({ address, signature, message, password }),
+    }),
 };
 
 // Payment API

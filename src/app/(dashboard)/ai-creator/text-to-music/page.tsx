@@ -16,7 +16,7 @@ import { Music, Loader2, Download, Play, Pause, Sparkles } from 'lucide-react';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '@/store';
-import { createAITask, pollAITaskStatus } from '@/lib/parse-actions';
+import { createAITask } from '@/lib/parse-actions';
 
 const musicStyles = [
   { value: 'pop', label: '流行' },
@@ -75,19 +75,7 @@ export default function TextToMusicPage() {
         throw new Error(taskResult.error || '创建任务失败');
       }
       
-      toast.success('任务已提交，正在生成...');
-      
-      // 轮询任务状态
-      const pollResult = await pollAITaskStatus(taskResult.data.objectId, 120, 3000);
-      
-      if (pollResult.success && pollResult.data?.status === 2 && pollResult.data.results?.[0]) {
-        setGeneratedMusic(pollResult.data.results[0].url);
-        toast.success('音乐生成成功！');
-      } else if (pollResult.data?.status === 3) {
-        throw new Error(pollResult.data.errorMessage || '生成失败');
-      } else {
-        throw new Error(pollResult.error || '获取结果失败');
-      }
+      toast.success('任务已提交，可在「AI任务」页面查看进度');
     } catch (error) {
       toast.error((error as Error).message || '生成失败，请稍后重试');
     } finally {

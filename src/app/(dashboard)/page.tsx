@@ -17,7 +17,7 @@ import {
   Star,
 } from 'lucide-react';
 import { useAuthStore } from '@/store';
-import { getProducts, getUserAssets, countObjects, type Product } from '@/lib/parse-actions';
+import { getProducts, getUserProducts, type Product } from '@/lib/parse-actions';
 
 export default function HomePage() {
   const { user } = useAuthStore();
@@ -41,15 +41,14 @@ export default function HomePage() {
       }
       
       // 获取用户统计
-      if (user) {
-        const assetsResult = await getUserAssets(user.objectId, { limit: 1 });
-        const followersResult = await countObjects('Follow', { followingId: user.objectId });
+      if (user?.web3Address) {
+        const assetsResult = await getUserProducts(user.web3Address, { limit: 1 });
         
         setStats({
           todayTasks: 0,
           totalAssets: assetsResult.total || 0,
           totalEarnings: user.totalIncentive || 0,
-          followers: followersResult.count || 0,
+          followers: 0, // TODO: 获取关注者数量
         });
       }
       

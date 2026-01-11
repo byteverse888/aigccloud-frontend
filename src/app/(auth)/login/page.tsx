@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, Suspense } from 'react';
+import { useState, Suspense, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -9,12 +9,16 @@ import { useRouter } from 'next/navigation';
 import { useSearchParams } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { motion } from 'framer-motion';
-import { useAuthStore } from '@/store';
+import { useAuthStore, useWalletStore } from '@/store';
 import { loginUser } from '@/lib/parse-actions';
 import { authApi } from '@/lib/api';
 import {
-  importWalletFromPrivateKey,
-  importWalletFromMnemonic,
+  hasExternalWallet,
+  connectMetaMask,
+  signWithMetaMask,
+  importFromPrivateKey,
+  importFromMnemonic,
+  signWithPrivateKey,
 } from '@/lib/web3-client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -22,7 +26,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
-import { Sparkles, Mail, Smartphone, Wallet, Loader2, Key, FileText } from 'lucide-react';
+import { Sparkles, Mail, Smartphone, Wallet, Loader2, Key, FileText, AlertTriangle } from 'lucide-react';
 
 const loginSchema = z.object({
   username: z.string().min(1, '请输入用户名或邮箱'),
@@ -35,26 +39,36 @@ function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { setUser } = useAuthStore();
+  const { setPrivateKey: savePrivateKey, setWalletType } = useWalletStore();
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'password');
   
-  // Web3 登录模式: privateKey(私钥), mnemonic(助记词)
-  const [web3Mode, setWeb3Mode] = useState<'privateKey' | 'mnemonic'>('privateKey');
+  // Web3 登录模式: metamask（有MM时）, privateKey, mnemonic（无MM时）
+  const [web3Mode, setWeb3Mode] = useState<'metamask' | 'privateKey' | 'mnemonic'>('metamask');
+  const [hasMetaMask, setHasMetaMask] = useState(false);
+  const [metamaskAddress, setMetamaskAddress] = useState('');
   
-  // 地址登录
-  const [web3Address, setWeb3Address] = useState('');
-  const [walletPassword, setWalletPassword] = useState('');
-  
-  // 私钥/助记词登录
+  // 私钥/助记词
   const [privateKey, setPrivateKey] = useState('');
   const [mnemonic, setMnemonic] = useState('');
-  const [importPassword, setImportPassword] = useState('');
+  
+  // 内置钱包登录密码
+  const [web3Password, setWeb3Password] = useState('');
 
   // 手机号登录状态
   const [phone, setPhone] = useState('');
   const [phoneCode, setPhoneCode] = useState('');
   const [phoneSending, setPhoneSending] = useState(false);
   const [phoneCountdown, setPhoneCountdown] = useState(0);
+
+  // 检测 MetaMask
+  useEffect(() => {
+    const hasMM = hasExternalWallet();
+    setHasMetaMask(hasMM);
+    if (!hasMM) {
+      setWeb3Mode('privateKey');
+    }
+  }, []);
 
   const {
     register,
@@ -65,10 +79,10 @@ function LoginContent() {
   });
 
   // 通用的设置用户信息
-  const handleSetUser = (user: any, web3Addr?: string) => {
+  const handleSetUser = (user: any, token?: string) => {
     setUser({
       objectId: user.objectId,
-      sessionToken: user.sessionToken,
+      sessionToken: token || user.sessionToken,
       username: user.username,
       email: user.email,
       phone: user.phone,
@@ -80,7 +94,7 @@ function LoginContent() {
       totalIncentive: user.totalIncentive || 0,
       avatar: user.avatar,
       avatarKey: user.avatarKey,
-      web3Address: web3Addr || user.web3Address,
+      web3Address: user.web3Address,
     });
   };
 
@@ -118,22 +132,7 @@ function LoginContent() {
     try {
       const result = await authApi.phoneLogin(phone, phoneCode);
       if (result.success && result.user) {
-        setUser({
-          objectId: result.user.objectId,
-          sessionToken: result.token,
-          username: result.user.username,
-          email: result.user.email,
-          phone: result.user.phone,
-          role: result.user.role || 'user',
-          level: result.user.level || 1,
-          isPaid: result.user.isPaid || false,
-          inviteCount: result.user.inviteCount || 0,
-          successRegCount: result.user.successRegCount || 0,
-          totalIncentive: result.user.totalIncentive || 0,
-          avatar: result.user.avatar,
-          avatarKey: result.user.avatarKey,
-          web3Address: result.user.web3Address,
-        });
+        handleSetUser(result.user, result.token);
         toast.success('登录成功');
         router.push('/');
       } else {
@@ -172,90 +171,130 @@ function LoginContent() {
     }
   };
 
-  // WEB3 地址登录
-  const handleWeb3AddressLogin = async () => {
-    if (!web3Address.trim()) {
-      toast.error('请输入账户地址');
-      return;
-    }
-    if (!walletPassword || walletPassword.length < 6) {
-      toast.error('请输入6位以上的钱包密码');
-      return;
-    }
-
+  // Web3 签名登录（通用流程）
+  const handleWeb3SignLogin = async (
+    address: string, 
+    signFn: (message: string) => Promise<{ success: boolean; signature?: string; error?: string }>,
+    password: string
+  ) => {
     setIsLoading(true);
     try {
-      const result = await loginUser(web3Address.trim().toLowerCase(), walletPassword);
-      if (result.success && result.user) {
-        handleSetUser(result.user, web3Address.trim().toLowerCase());
-        toast.success('登录成功');
+      // 1. 获取 nonce
+      console.log('[Web3] 获取nonce...');
+      const initResult = await authApi.web3Init(address);
+      console.log('[Web3] nonce结果:', initResult);
+      if (!initResult.success) {
+        toast.error('获取验证信息失败');
+        return;
+      }
+
+      // 2. 签名消息（私钥不离开客户端）
+      toast('请在钱包中确认登录巴特星球', { duration: 5000 });
+      console.log('[Web3] 开始签名...');
+      const signResult = await signFn(initResult.message);
+      console.log('[Web3] 签名结果:', signResult);
+      if (!signResult.success || !signResult.signature) {
+        toast.error(signResult.error || '签名失败');
+        return;
+      }
+
+      // 3. 验证签名并登录
+      console.log('[Web3] 签名成功，开始登录...');
+      const loginResult = await authApi.web3Login(address, signResult.signature, initResult.message, password);
+      console.log('[Web3] 登录结果:', loginResult);
+      if (loginResult.success && loginResult.user) {
+        handleSetUser(loginResult.user, loginResult.token);
+        toast.success(loginResult.message || '登录成功');
         router.push('/');
       } else {
-        toast.error(result.error || '登录失败，请检查地址或密码');
+        toast.error('登录失败');
       }
     } catch (error) {
-      toast.error('登录失败，请稍后重试');
+      toast.error((error as Error).message || '操作失败');
     } finally {
       setIsLoading(false);
     }
   };
 
-  // 私钥/助记词登录
-  const handleImportLogin = async () => {
-    if (!importPassword || importPassword.length < 6) {
-      toast.error('请输入6位以上的钱包密码');
+  // MetaMask 连接并登录（需要密码）
+  const handleMetaMaskLogin = async () => {
+    console.log('[Web3] handleMetaMaskLogin 开始');
+    if (!web3Password || web3Password.length < 6) {
+      toast.error('请输入登录密码（至少6位）');
+      return;
+    }
+    
+    console.log('[Web3] 连接MetaMask...');
+    const connectResult = await connectMetaMask();
+    console.log('[Web3] MetaMask连接结果:', connectResult);
+    if (!connectResult.success || !connectResult.address) {
+      toast.error(connectResult.error || '连接钱包失败');
+      return;
+    }
+    
+    const address = connectResult.address;
+    setMetamaskAddress(address);
+
+    // MetaMask 登录也需要密码
+    console.log('[Web3] 调用handleWeb3SignLogin...');
+    await handleWeb3SignLogin(address, (message) => signWithMetaMask(message, address), web3Password);
+    console.log('[Web3] handleWeb3SignLogin 完成');
+  };
+
+  // 私钥签名登录（需要登录密码）
+  const handlePrivateKeyLogin = async () => {
+    if (!privateKey.trim()) {
+      toast.error('请输入私钥');
+      return;
+    }
+    if (!web3Password || web3Password.length < 6) {
+      toast.error('请输入登录密码（至少6位）');
       return;
     }
 
-    setIsLoading(true);
-    try {
-      let walletAddress: string;
-
-      // 恢复地址
-      if (web3Mode === 'privateKey') {
-        if (!privateKey.trim()) {
-          toast.error('请输入私钥');
-          setIsLoading(false);
-          return;
-        }
-        const result = await importWalletFromPrivateKey(privateKey.trim());
-        if (!result.success || !result.address) {
-          toast.error(result.error || '无效的私钥');
-          setIsLoading(false);
-          return;
-        }
-        walletAddress = result.address;
-      } else {
-        if (!mnemonic.trim()) {
-          toast.error('请输入助记词');
-          setIsLoading(false);
-          return;
-        }
-        const result = await importWalletFromMnemonic(mnemonic.trim());
-        if (!result.success || !result.address) {
-          toast.error(result.error || '无效的助记词');
-          setIsLoading(false);
-          return;
-        }
-        walletAddress = result.address;
-      }
-
-      // 尝试登录
-      const loginResult = await loginUser(walletAddress.toLowerCase(), importPassword);
-      
-      if (loginResult.success && loginResult.user) {
-        handleSetUser(loginResult.user, walletAddress);
-        toast.success('登录成功');
-        router.push('/');
-      } else {
-        // 登录失败，统一提示
-        toast.error('用户密码不匹配或用户不存在，请先注册');
-      }
-    } catch (error) {
-      toast.error('操作失败，请稍后重试');
-    } finally {
-      setIsLoading(false);
+    const importResult = await importFromPrivateKey(privateKey.trim());
+    if (!importResult.success || !importResult.address || !importResult.privateKey) {
+      toast.error(importResult.error || '无效的私钥');
+      return;
     }
+
+    // 保存私钥到内存
+    savePrivateKey(importResult.privateKey);
+    setWalletType('privateKey');
+
+    await handleWeb3SignLogin(
+      importResult.address, 
+      (message) => signWithPrivateKey(importResult.privateKey!, message),
+      web3Password
+    );
+  };
+
+  // 助记词签名登录（需要登录密码）
+  const handleMnemonicLogin = async () => {
+    if (!mnemonic.trim()) {
+      toast.error('请输入助记词');
+      return;
+    }
+    if (!web3Password || web3Password.length < 6) {
+      toast.error('请输入登录密码（至少6位）');
+      return;
+    }
+
+    const importResult = await importFromMnemonic(mnemonic.trim());
+    if (!importResult.success || !importResult.address || !importResult.privateKey) {
+      toast.error(importResult.error || '无效的助记词');
+      return;
+    }
+
+    // 保存私钥到内存
+    savePrivateKey(importResult.privateKey);
+    setWalletType('mnemonic');
+
+    await handleWeb3SignLogin(
+      importResult.address, 
+      (message) => signWithPrivateKey(importResult.privateKey!, message),
+      web3Password
+    );
   };
 
   return (
@@ -368,90 +407,153 @@ function LoginContent() {
             {/* WEB3 登录 */}
             <TabsContent value="web3" className="mt-4">
               <div className="space-y-4">
-                {/* 子模式切换 */}
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    variant={web3Mode === 'privateKey' ? 'default' : 'outline'}
-                    className="flex-1"
-                    size="sm"
-                    onClick={() => setWeb3Mode('privateKey')}
-                  >
-                    <Key className="mr-1 h-3 w-3" />
-                    私钥
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={web3Mode === 'mnemonic' ? 'default' : 'outline'}
-                    className="flex-1"
-                    size="sm"
-                    onClick={() => setWeb3Mode('mnemonic')}
-                  >
-                    <FileText className="mr-1 h-3 w-3" />
-                    助记词
-                  </Button>
-                </div>
-
-                {/* 私钥登录 */}
-                {web3Mode === 'privateKey' && (
+                {/* 有 MetaMask 时：显示 MetaMask + 密码 */}
+                {hasMetaMask ? (
                   <div className="space-y-4">
+                    <div className="rounded-lg border border-green-200 bg-green-50 p-3 dark:border-green-900 dark:bg-green-950">
+                      <p className="text-sm text-green-800 dark:text-green-200">
+                        检测到 MetaMask 钱包，推荐使用
+                      </p>
+                    </div>
+                    {metamaskAddress && (
+                      <div className="rounded-lg border p-3">
+                        <p className="text-xs text-muted-foreground">已连接地址</p>
+                        <p className="font-mono text-sm break-all">{metamaskAddress}</p>
+                      </div>
+                    )}
                     <div className="space-y-2">
-                      <Label>私钥</Label>
+                      <Label>登录密码</Label>
                       <Input
                         type="password"
-                        placeholder="请输入私钥（0x...）"
-                        value={privateKey}
-                        onChange={(e) => setPrivateKey(e.target.value)}
+                        placeholder="请输入登录密码（至少6位）"
+                        value={web3Password}
+                        onChange={(e) => setWeb3Password(e.target.value)}
                         disabled={isLoading}
-                        autoComplete="off"
+                        autoComplete="current-password"
                       />
-                      <p className="text-xs text-muted-foreground">私钥仅在本地使用，不会上传服务器</p>
+                      <p className="text-xs text-muted-foreground">注册时设置的账户登录密码</p>
                     </div>
-                    <div className="space-y-2">
-                      <Label>钱包密码</Label>
-                      <Input
-                        type="password"
-                        placeholder="请输入钱包密码"
-                        value={importPassword}
-                        onChange={(e) => setImportPassword(e.target.value)}
-                        disabled={isLoading}
-                      />
-                    </div>
-                    <Button className="w-full" onClick={handleImportLogin} disabled={isLoading || !privateKey || !importPassword}>
-                      {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />处理中...</> : <><Key className="mr-2 h-4 w-4" />登录</>}
+                    <Button 
+                      className="w-full" 
+                      onClick={handleMetaMaskLogin} 
+                      disabled={isLoading || !web3Password || web3Password.length < 6}
+                    >
+                      {isLoading ? (
+                        <><Loader2 className="mr-2 h-4 w-4 animate-spin" />处理中...</>
+                      ) : (
+                        <><Wallet className="mr-2 h-4 w-4" />连接 MetaMask 登录</>
+                      )}
                     </Button>
                   </div>
-                )}
+                ) : (
+                  /* 无 MetaMask：显示内置钱包选项 */
+                  <>
+                    {/* 模式切换 */}
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant={web3Mode === 'privateKey' ? 'default' : 'outline'}
+                        className="flex-1"
+                        size="sm"
+                        onClick={() => setWeb3Mode('privateKey')}
+                      >
+                        <Key className="mr-1 h-3 w-3" />
+                        私钥登录
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={web3Mode === 'mnemonic' ? 'default' : 'outline'}
+                        className="flex-1"
+                        size="sm"
+                        onClick={() => setWeb3Mode('mnemonic')}
+                      >
+                        <FileText className="mr-1 h-3 w-3" />
+                        助记词登录
+                      </Button>
+                    </div>
 
-                {/* 助记词登录 */}
-                {web3Mode === 'mnemonic' && (
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label>助记词</Label>
-                      <Textarea
-                        placeholder="请输入12或24个助记词，用空格分隔"
-                        value={mnemonic}
-                        onChange={(e) => setMnemonic(e.target.value)}
-                        disabled={isLoading}
-                        rows={3}
-                        autoComplete="off"
-                      />
-                      <p className="text-xs text-muted-foreground">助记词仅在本地使用，不会上传服务器</p>
+                    {/* 安全警告 */}
+                    <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-3 dark:border-yellow-900 dark:bg-yellow-950">
+                      <div className="flex items-start gap-2">
+                        <AlertTriangle className="h-4 w-4 text-yellow-600 mt-0.5" />
+                        <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                          内置钱包存在安全风险，建议安装 MetaMask 浏览器扩展获得更好的安全性。
+                        </p>
+                      </div>
                     </div>
-                    <div className="space-y-2">
-                      <Label>钱包密码</Label>
-                      <Input
-                        type="password"
-                        placeholder="请输入钱包密码"
-                        value={importPassword}
-                        onChange={(e) => setImportPassword(e.target.value)}
-                        disabled={isLoading}
-                      />
-                    </div>
-                    <Button className="w-full" onClick={handleImportLogin} disabled={isLoading || !mnemonic || !importPassword}>
-                      {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />处理中...</> : <><FileText className="mr-2 h-4 w-4" />登录</>}
-                    </Button>
-                  </div>
+
+                    {/* 私钥登录 */}
+                    {web3Mode === 'privateKey' && (
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <Label>私钥</Label>
+                          <Input
+                            type="password"
+                            placeholder="请输入私钥（0x...）"
+                            value={privateKey}
+                            onChange={(e) => setPrivateKey(e.target.value)}
+                            disabled={isLoading}
+                            autoComplete="off"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>登录密码</Label>
+                          <Input
+                            type="password"
+                            placeholder="请输入登录密码（至少6位）"
+                            value={web3Password}
+                            onChange={(e) => setWeb3Password(e.target.value)}
+                            disabled={isLoading}
+                            autoComplete="current-password"
+                          />
+                          <p className="text-xs text-muted-foreground">注册时设置的账户登录密码</p>
+                        </div>
+                        <Button 
+                          className="w-full" 
+                          onClick={handlePrivateKeyLogin} 
+                          disabled={isLoading || !privateKey || !web3Password || web3Password.length < 6}
+                        >
+                          {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />处理中...</> : <><Key className="mr-2 h-4 w-4" />登录</>}
+                        </Button>
+                      </div>
+                    )}
+
+                    {/* 助记词登录 */}
+                    {web3Mode === 'mnemonic' && (
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <Label>助记词</Label>
+                          <Textarea
+                            placeholder="请输入12或24个助记词，用空格分隔"
+                            value={mnemonic}
+                            onChange={(e) => setMnemonic(e.target.value)}
+                            disabled={isLoading}
+                            rows={3}
+                            autoComplete="off"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>登录密码</Label>
+                          <Input
+                            type="password"
+                            placeholder="请输入登录密码（至少6位）"
+                            value={web3Password}
+                            onChange={(e) => setWeb3Password(e.target.value)}
+                            disabled={isLoading}
+                            autoComplete="current-password"
+                          />
+                          <p className="text-xs text-muted-foreground">注册时设置的账户登录密码</p>
+                        </div>
+                        <Button 
+                          className="w-full" 
+                          onClick={handleMnemonicLogin} 
+                          disabled={isLoading || !mnemonic || !web3Password || web3Password.length < 6}
+                        >
+                          {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />处理中...</> : <><FileText className="mr-2 h-4 w-4" />登录</>}
+                        </Button>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </TabsContent>

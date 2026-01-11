@@ -17,7 +17,7 @@ import { Mic, Loader2, Download, Play, Pause, Sparkles, Upload, FileAudio, Copy,
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '@/store';
-import { createAITask, pollAITaskStatus } from '@/lib/parse-actions';
+import { createAITask } from '@/lib/parse-actions';
 import { getPresignedUploadUrl } from '@/lib/storage-actions';
 
 const voices = [
@@ -96,18 +96,7 @@ export default function TextToSpeechPage() {
         throw new Error(taskResult.error || '创建任务失败');
       }
       
-      toast.success('任务已提交，正在生成...');
-      
-      const pollResult = await pollAITaskStatus(taskResult.data.objectId, 60, 2000);
-      
-      if (pollResult.success && pollResult.data?.status === 2 && pollResult.data.results?.[0]) {
-        setGeneratedAudio(pollResult.data.results[0].url);
-        toast.success('语音生成成功！');
-      } else if (pollResult.data?.status === 3) {
-        throw new Error(pollResult.data.errorMessage || '生成失败');
-      } else {
-        throw new Error(pollResult.error || '获取结果失败');
-      }
+      toast.success('任务已提交，可在「AI任务」页面查看进度');
     } catch (error) {
       toast.error((error as Error).message || '生成失败，请稍后重试');
     } finally {
@@ -214,19 +203,7 @@ export default function TextToSpeechPage() {
         throw new Error(taskResult.error || '创建任务失败');
       }
       
-      toast.success('任务已提交，正在识别...');
-      
-      const pollResult = await pollAITaskStatus(taskResult.data.objectId, 120, 2000);
-      
-      if (pollResult.success && pollResult.data?.status === 2 && pollResult.data.results?.[0]) {
-        const result = pollResult.data.results[0];
-        setRecognizedText(result.text || '');
-        toast.success('语音识别成功！');
-      } else if (pollResult.data?.status === 3) {
-        throw new Error(pollResult.data.errorMessage || '识别失败');
-      } else {
-        throw new Error(pollResult.error || '获取结果失败');
-      }
+      toast.success('任务已提交，可在「AI任务」页面查看进度');
     } catch (error) {
       toast.error((error as Error).message || '识别失败，请稍后重试');
     } finally {

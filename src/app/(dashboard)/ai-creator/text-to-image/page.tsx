@@ -7,7 +7,7 @@ import { z } from 'zod';
 import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAICreationStore, useAuthStore } from '@/store';
-import { createAITask, pollAITaskStatus } from '@/lib/parse-actions';
+import { createAITask } from '@/lib/parse-actions';
 import { getPresignedUploadUrl } from '@/lib/storage-actions';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -178,7 +178,8 @@ export default function ImageGenerationPage() {
         }
       }
 
-      const taskResult = await createAITask({
+      console.log('[Text2Image] 开始创建任务, user:', user?.objectId);
+      const taskData = {
         designer: user.objectId,
         type: activeTab,
         model: data.model,
@@ -194,7 +195,10 @@ export default function ImageGenerationPage() {
           }),
         },
         status: 0 as const,
-      });
+      };
+      console.log('[Text2Image] 任务数据:', taskData);
+
+      const taskResult = await createAITask(taskData);
       
       if (!taskResult.success || !taskResult.data?.objectId) {
         throw new Error(taskResult.error || '创建任务失败');
@@ -212,21 +216,7 @@ export default function ImageGenerationPage() {
       
       setCurrentTask(task);
       
-      toast.success('任务已提交，正在生成...');
-      
-      const pollResult = await pollAITaskStatus(taskId, 120, 2000);
-      
-      if (pollResult.success && pollResult.data) {
-        if (pollResult.data.status === 2 && pollResult.data.results) {
-          const images = pollResult.data.results.map((r: { url: string }) => r.url);
-          setGeneratedImages(images);
-          toast.success('图片生成成功！');
-        } else if (pollResult.data?.status === 3) {
-          throw new Error(pollResult.data.errorMessage || '生成失败');
-        }
-      } else {
-        throw new Error(pollResult.error || '获取任务结果失败');
-      }
+      toast.success('任务已提交，可在「AI任务」页面查看进度');
     } catch (error) {
       toast.error((error as Error).message || '生成失败，请稍后重试');
     } finally {

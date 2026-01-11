@@ -33,8 +33,16 @@ import {
 export function Header() {
   const t = useTranslations();
   const { user, isAuthenticated, logout } = useAuthStore();
-  const cartItemCount = useCartStore((state) => state.getTotalItems());
+  const getTotalItems = useCartStore((state) => state.getTotalItems);
+  const [cartItemCount, setCartItemCount] = useState(0);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [mounted, setMounted] = useState(false);
+
+  // 确保客户端挂载后才获取购物车数量，避免水合错误
+  useEffect(() => {
+    setMounted(true);
+    setCartItemCount(getTotalItems());
+  }, [getTotalItems]);
 
   useEffect(() => {
     if (user?.objectId) {
@@ -54,7 +62,7 @@ export function Header() {
       <Link href="/cart">
         <Button variant="ghost" size="icon" className="relative">
           <ShoppingCart className="h-5 w-5" />
-          {cartItemCount > 0 && (
+          {mounted && cartItemCount > 0 && (
             <Badge className="absolute -right-1 -top-1 h-5 w-5 rounded-full p-0 text-xs">
               {cartItemCount > 99 ? '99+' : cartItemCount}
             </Badge>

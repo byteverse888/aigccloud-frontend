@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Heart, ArrowLeft, ShoppingCart, Trash2, Loader2 } from 'lucide-react';
+import { Bookmark, ArrowLeft, ShoppingCart, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -20,7 +20,8 @@ interface FavoriteItem {
     price: number;
     category: string;
     creatorName?: string;
-  };
+    cover?: string;
+  } | null;
 }
 
 export default function FavoritesPage() {
@@ -81,7 +82,7 @@ export default function FavoritesPage() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Heart className="h-5 w-5" />
+              <Bookmark className="h-5 w-5" />
               我的收藏
             </CardTitle>
             <CardDescription>共收藏了 {total} 个商品</CardDescription>
@@ -93,7 +94,7 @@ export default function FavoritesPage() {
               </div>
             ) : favorites.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground">
-                <Heart className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <Bookmark className="h-12 w-12 mx-auto mb-4 opacity-50" />
                 <p>暂无收藏商品</p>
                 <Button className="mt-4" asChild>
                   <Link href="/market">去商城逛逛</Link>
@@ -104,7 +105,11 @@ export default function FavoritesPage() {
                 {favorites.map((item) => (
                   <Card key={item.objectId} className="overflow-hidden">
                     <div className="h-40 bg-muted flex items-center justify-center">
-                      <Heart className="h-8 w-8 text-muted-foreground" />
+                      {item.product?.cover ? (
+                        <img src={item.product.cover} alt={item.product.name} className="h-full w-full object-cover" />
+                      ) : (
+                        <Bookmark className="h-8 w-8 text-muted-foreground" />
+                      )}
                     </div>
                     <CardContent className="p-4">
                       <Badge variant="secondary" className="mb-2">
@@ -124,8 +129,14 @@ export default function FavoritesPage() {
                           <Button size="icon" variant="outline" onClick={() => handleAddToCart(item)}>
                             <ShoppingCart className="h-4 w-4" />
                           </Button>
-                          <Button size="icon" variant="outline" onClick={() => handleRemove(item.productId)}>
-                            <Trash2 className="h-4 w-4" />
+                          <Button 
+                            size="icon" 
+                            variant="outline" 
+                            onClick={() => handleRemove(item.productId)}
+                            className="text-yellow-500 hover:text-yellow-600"
+                            title="取消收藏"
+                          >
+                            <Bookmark className="h-4 w-4 fill-current" />
                           </Button>
                         </div>
                       </div>

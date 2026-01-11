@@ -10,7 +10,10 @@ const PARSE_REST_API_KEY = process.env.PARSE_REST_API_KEY || 'restapi_service_ke
 
 // ============ 错误信息翻译 ============
 
-function translateError(error: string, context?: Record<string, unknown>): string {
+function translateError(error: unknown, context?: Record<string, unknown>): string {
+  // 确保 error 是字符串
+  const errorStr = typeof error === 'string' ? error : (error as Error)?.message || String(error);
+  
   const errorMap: Record<string, string> = {
     'Account already exists for this username.': `用户名已存在${context?.username ? ` (${context.username})` : ''}`,
     'Invalid username/password.': '用户名或密码错误',
@@ -21,11 +24,11 @@ function translateError(error: string, context?: Record<string, unknown>): strin
   };
   
   for (const [en, zh] of Object.entries(errorMap)) {
-    if (error.toLowerCase().includes(en.toLowerCase())) {
+    if (errorStr.toLowerCase().includes(en.toLowerCase())) {
       return zh;
     }
   }
-  return error;
+  return errorStr;
 }
 
 // ============ 核心请求 ============
@@ -43,19 +46,36 @@ async function parseRequest(
   };
   if (sessionToken) headers['X-Parse-Session-Token'] = sessionToken;
 
-  const response = await fetch(`${PARSE_SERVER_URL}${endpoint}`, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-    cache: 'no-store',
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    const errorMsg = translateError(error.error || `HTTP ${response.status}`, body);
-    throw new Error(errorMsg);
+  const url = `${PARSE_SERVER_URL}${endpoint}`;
+  // 只在写操作时输出日志
+  const isWriteOp = method !== 'GET';
+  if (isWriteOp) {
+    console.log(`[ParseRequest] ${method} ${endpoint}`);
   }
-  return response.json();
+
+  try {
+    const response = await fetch(url, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+      cache: 'no-store',
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      const errorMsg = translateError(error.error || `HTTP ${response.status}`, body);
+      console.log(`[ParseRequest] 错误: ${method} ${endpoint} - ${response.status} - ${errorMsg}`);
+      throw new Error(errorMsg);
+    }
+    const result = await response.json();
+    if (isWriteOp) {
+      console.log(`[ParseRequest] 成功:`, result.objectId || 'OK');
+    }
+    return result;
+  } catch (error) {
+    console.log(`[ParseRequest] 异常: ${method} ${endpoint} -`, error);
+    throw error;
+  }
 }
 
 // ============ 通用类型 ============
@@ -258,149 +278,6 @@ export async function resetPassword(email: string) {
   }
 }
 
-/**
- * Web3 登录 - 通过签名验证
- */
-export async function web3Login(
-  address: string,
-  message: string,
-  signature: string,
-  timestamp: number
-) {
-  try {
-    // 验证时间戳（5分钟内有效）
-    const now = Date.now();
-    if (now - timestamp > 5 * 60 * 1000) {
-      return { success: false, error: '签名已过期，请重新登录' };
-    }
-
-    // 验证签名
-    const { ethers } = await import('ethers');
-    let recoveredAddress: string;
-    try {
-      recoveredAddress = ethers.verifyMessage(message, signature);
-    } catch {
-      return { success: false, error: '签名验证失败' };
-    }
-
-    if (recoveredAddress.toLowerCase() !== address.toLowerCase()) {
-      return { success: false, error: '签名与地址不匹配' };
-    }
-
-    // 查找用户
-    const userResult = await queryObjects('_User', { where: { web3Address: address.toLowerCase() }, limit: 1 });
-    if (!userResult.data || userResult.data.length === 0) {
-      return { success: false, error: '该账户地址未注册，请先注册' };
-    }
-
-    const user = userResult.data[0] as ParseUser;
-    
-    // 获取完整用户信息
-    const fullUser = await parseRequest(`/users/${user.objectId}`, 'GET');
-    
-    return {
-      success: true,
-      user: {
-        objectId: fullUser.objectId,
-        sessionToken: fullUser.sessionToken,
-        username: fullUser.username,
-        email: fullUser.email,
-        role: fullUser.role || 'user',
-        level: fullUser.level || 1,
-        isPaid: fullUser.isPaid || false,
-        inviteCount: fullUser.inviteCount || 0,
-        successRegCount: fullUser.successRegCount || 0,
-        totalIncentive: fullUser.totalIncentive || 0,
-        avatar: fullUser.avatar,
-        web3Address: fullUser.web3Address,
-      } as ParseUser,
-    };
-  } catch (error) {
-    return { success: false, error: (error as Error).message };
-  }
-}
-
-/**
- * Web3 注册 - 创建新用户并绑定账户地址
- * @param password - 用户设置的密码，用于后续密码登录
- */
-export async function web3Register(
-  address: string,
-  password: string
-) {
-  try {
-    // 验证密码
-    if (!password || password.length < 6) {
-      return { success: false, error: '钱包密码至少6位' };
-    }
-
-    // 检查地址是否已注册
-    const existingUser = await queryObjects('_User', { where: { web3Address: address.toLowerCase() }, limit: 1 });
-    if (existingUser.data && existingUser.data.length > 0) {
-      return { success: false, error: '该账户地址已注册' };
-    }
-
-    // 使用账户地址作为用户名
-    const username = address.toLowerCase();
-
-    // 创建用户
-    const result = await parseRequest('/users', 'POST', {
-      username,
-      password,
-      web3Address: address.toLowerCase(),
-      role: 'user',
-      level: 1,
-      isPaid: false,
-      inviteCount: 0,
-      successRegCount: 0,
-      totalIncentive: 0,
-    });
-
-    return {
-      success: true,
-      user: {
-        objectId: result.objectId,
-        sessionToken: result.sessionToken,
-        username: result.username,
-        email: result.email,
-        role: 'user',
-        level: 1,
-        isPaid: false,
-        inviteCount: 0,
-        successRegCount: 0,
-        totalIncentive: 0,
-        web3Address: address.toLowerCase(),
-      } as ParseUser,
-    };
-  } catch (error) {
-    return { success: false, error: (error as Error).message };
-  }
-}
-
-/**
- * Web3 账户检查：检查用户是否存在
- */
-export async function checkWeb3UserExists(address: string) {
-  try {
-    const username = address.toLowerCase();
-
-    // 使用 /users 端点查询（而不是 /classes/_User）
-    const params = new URLSearchParams();
-    params.set('where', JSON.stringify({ web3Address: username }));
-    params.set('limit', '1');
-    
-    const result = await parseRequest(`/users?${params.toString()}`, 'GET');
-    
-    if (!result.results || result.results.length === 0) {
-      return { exists: false, error: '用户不存在，请先注册' };
-    } else {
-      return { exists: true, error: '用户名和密码不匹配' };
-    }
-  } catch (error) {
-    return { exists: false, error: (error as Error).message };
-  }
-}
-
 export async function changePassword(username: string, currentPassword: string, newPassword: string) {
   try {
     const loginResult = await loginUser(username, currentPassword);
@@ -469,6 +346,24 @@ export async function checkLikeAndFavorite(productId: string, userId: string) {
   }
 }
 
+// 批量检查用户对多个商品的喜欢/收藏状态
+export async function checkUserLikesAndFavorites(productIds: string[], userId: string) {
+  if (!userId || productIds.length === 0) {
+    return { success: true, likedIds: new Set<string>(), favoritedIds: new Set<string>() };
+  }
+  try {
+    const [likeResult, favoriteResult] = await Promise.all([
+      queryObjects('Like', { where: { productId: { $in: productIds }, userId }, limit: 1000 }),
+      queryObjects('Favorite', { where: { productId: { $in: productIds }, userId }, limit: 1000 }),
+    ]);
+    const likedIds = new Set<string>(likeResult.data?.map((l: { productId: string }) => l.productId) || []);
+    const favoritedIds = new Set<string>(favoriteResult.data?.map((f: { productId: string }) => f.productId) || []);
+    return { success: true, likedIds, favoritedIds };
+  } catch (error) {
+    return { success: false, error: (error as Error).message, likedIds: new Set<string>(), favoritedIds: new Set<string>() };
+  }
+}
+
 export async function checkFollowing(followerId: string, followingId: string) {
   try {
     const result = await queryObjects('Follow', { where: { followerId, followingId }, limit: 1 });
@@ -481,7 +376,44 @@ export async function checkFollowing(followerId: string, followingId: string) {
 // ============ 分页查询接口 ============
 
 export async function getUserFavorites(userId: string, page = 1, limit = 20) {
-  return paginatedQuery('Favorite', { userId }, page, limit);
+  try {
+    // 先查询收藏记录
+    const favoritesResult = await paginatedQuery<{ objectId: string; productId: string; userId: string }>('Favorite', { userId }, page, limit);
+    if (!favoritesResult.success || !favoritesResult.data || favoritesResult.data.length === 0) {
+      return favoritesResult;
+    }
+
+    // 获取所有收藏商品的ID
+    const productIds = favoritesResult.data.map(f => f.productId);
+    
+    // 查询商品详情
+    const productsResult = await queryObjects('Product', {
+      where: { objectId: { $in: productIds } },
+      limit: productIds.length,
+    });
+    
+    // 创建商品映射
+    const productMap = new Map<string, Product>();
+    if (productsResult.data) {
+      for (const product of productsResult.data) {
+        productMap.set(product.objectId, product as Product);
+      }
+    }
+    
+    // 合并数据
+    const dataWithProducts = favoritesResult.data.map(favorite => ({
+      ...favorite,
+      product: productMap.get(favorite.productId) || null,
+    }));
+    
+    return {
+      ...favoritesResult,
+      data: dataWithProducts,
+    };
+  } catch (error) {
+    console.error('[getUserFavorites] 查询失败:', error);
+    return { success: false, error: (error as Error).message, data: [], total: 0 };
+  }
 }
 
 export async function getUserFollowing(userId: string, page = 1, limit = 20) {
@@ -497,6 +429,33 @@ export async function getComments(productId: string, page = 1, limit = 20) {
 }
 
 // ============ 评论 ============
+
+export interface Comment {
+  objectId: string;
+  productId: string;
+  userId: string;
+  userName?: string;
+  userAvatar?: string;
+  content: string;
+  rating?: number;
+  likeCount?: number;
+  parentId?: string | null;
+  createdAt: string;
+}
+
+export async function getProductComments(productId: string, page = 1, limit = 10) {
+  return paginatedQuery<Comment>('Comment', { productId }, page, limit, '-createdAt');
+}
+
+export async function createComment(comment: Omit<Comment, 'objectId' | 'createdAt'>) {
+  const result = await createObject('Comment', { ...comment, likeCount: 0 });
+  if (result.success) {
+    await parseRequest(`/classes/Product/${comment.productId}`, 'PUT', {
+      commentCount: { __op: 'Increment', amount: 1 },
+    });
+  }
+  return result;
+}
 
 export async function addComment(productId: string, userId: string, content: string, parentId?: string) {
   try {
@@ -528,14 +487,76 @@ export interface Product {
   price: number;
   originalPrice?: number;
   cover?: string;
+  images?: string[];
   rating?: number;
   sales?: number;
   likeCount?: number;
+  favoriteCount?: number;
   commentCount?: number;
-  status: string;
+  views?: number;
+  status: 'draft' | 'pending' | 'approved' | 'rejected' | 'offline';
   creatorId: string;
   creatorName?: string;
+  creatorAddress?: string;
+  owner: string; // 当前拥有者的web3地址，初始等于creatorAddress，交易后更新为购买者地址
+  mockType?: string;
+  mockOwner?: string;
+  tags?: string[];
   createdAt: string;
+  updatedAt?: string;
+}
+
+// ============ AIIP资产 ============
+
+export interface AIIPAsset {
+  objectId: string;
+  name: string;
+  description?: string;
+  category: string; // image/audio/video/model
+  cover?: string;
+  images?: string[];
+  fileUrl?: string; // 资产文件URL
+  fileSize?: number;
+  fileType?: string;
+  status: 'draft' | 'pending' | 'approved' | 'rejected' | 'offline';
+  ownerId: string; // 拥有者用户ID
+  ownerAddress: string; // 拥有者web3地址
+  ownerName?: string;
+  price?: number; // 上架价格
+  isListed?: boolean; // 是否已上架到商城
+  listedProductId?: string; // 对应的商城商品ID
+  views?: number;
+  mockOwner?: string; // 模拟数据创建者
+  tags?: string[];
+  createdAt: string;
+  updatedAt?: string;
+}
+
+// 获取用户的AIIP资产
+export async function getUserAIIPAssets(ownerAddress: string, options?: { status?: string; category?: string; page?: number; limit?: number }) {
+  const where: Record<string, unknown> = { ownerAddress };
+  if (options?.status && options.status !== 'all') where.status = options.status;
+  if (options?.category && options.category !== 'all') where.category = options.category;
+  return paginatedQuery<AIIPAsset>('AIIPAsset', where, options?.page || 1, options?.limit || 20);
+}
+
+// 创建AIIP资产
+export async function createAIIPAsset(asset: Omit<AIIPAsset, 'objectId' | 'createdAt'>) {
+  return createObject('AIIPAsset', {
+    ...asset,
+    views: 0,
+    isListed: false,
+  });
+}
+
+// 更新AIIP资产状态
+export async function updateAIIPAssetStatus(assetId: string, status: AIIPAsset['status']) {
+  return updateObject('AIIPAsset', assetId, { status });
+}
+
+// 删除AIIP资产
+export async function deleteAIIPAsset(assetId: string) {
+  return deleteObject('AIIPAsset', assetId);
 }
 
 export async function getProducts(options?: { category?: string; search?: string; sortBy?: string; page?: number; limit?: number }) {
@@ -553,6 +574,248 @@ export async function getProducts(options?: { category?: string; search?: string
 
 export async function getProductById(productId: string) {
   return getObject('Product', productId);
+}
+
+// 获取用户自己的商品（AIIP资产）- 按 owner 字段查询
+export async function getUserProducts(ownerAddress: string, options?: { status?: string; category?: string; page?: number; limit?: number }) {
+  const where: Record<string, unknown> = { owner: ownerAddress };
+  if (options?.status && options.status !== 'all') where.status = options.status;
+  if (options?.category && options.category !== 'all') where.category = options.category;
+  return paginatedQuery<Product>('Product', where, options?.page || 1, options?.limit || 20);
+}
+
+// 创建商品
+export async function createProduct(product: Omit<Product, 'objectId' | 'createdAt'>) {
+  return createObject('Product', {
+    ...product,
+    sales: 0,
+    likeCount: 0,
+    favoriteCount: 0,
+    commentCount: 0,
+    views: 0,
+    rating: 0,
+  });
+}
+
+// 更新商品
+export async function updateProduct(productId: string, data: Partial<Product>) {
+  return updateObject('Product', productId, data);
+}
+
+// 上架/下架商品
+export async function updateProductStatus(productId: string, status: Product['status']) {
+  return updateObject('Product', productId, { status });
+}
+
+// 初始化模拟商品数据
+const MOCK_USER_ADDRESS = '0xe5c52a1b6f6bff745fde3a4ec9607accdba2e77e';
+
+export async function initMockProducts(forceCreate = false) {
+  // 检查是否已有数据
+  if (!forceCreate) {
+    const existing = await queryObjects('Product', { where: { creatorAddress: MOCK_USER_ADDRESS }, limit: 1 });
+    if (existing.data && existing.data.length > 0) {
+      console.log('[initMockProducts] 已存在模拟数据');
+      return { success: true, message: '已存在模拟数据' };
+    }
+  }
+
+  const mockProducts = [
+    { name: '梦幻星空壁纸', category: 'image', price: 29, description: 'AI生成的奇幻星空场景', cover: 'https://picsum.photos/seed/product1/400/300', status: 'approved' as const },
+    { name: '电子音乐合集', category: 'audio', price: 49, description: '原创AI电子音乐合集', cover: 'https://picsum.photos/seed/product2/400/300', status: 'approved' as const },
+    { name: '动态卡通头像', category: 'video', price: 19, description: '可爱的动态卡通头像', cover: 'https://picsum.photos/seed/product3/400/300', status: 'approved' as const },
+    { name: '赛博朋克风格套图', category: 'image', price: 39, description: '赛博朋克风格的城市场景套图', cover: 'https://picsum.photos/seed/product4/400/300', status: 'approved' as const },
+    { name: '自然白噪音合集', category: 'audio', price: 9, description: '放松的自然白噪音', cover: 'https://picsum.photos/seed/product5/400/300', status: 'approved' as const },
+    { name: 'Q版游戏角色', category: 'image', price: 59, description: 'Q版风格的游戏角色设计', cover: 'https://picsum.photos/seed/product6/400/300', status: 'approved' as const },
+    { name: '古风水墨画套图', category: 'image', price: 79, description: '中国风水墨画风格插画', cover: 'https://picsum.photos/seed/product7/400/300', status: 'pending' as const },
+    { name: '说唱伴奏曲', category: 'audio', price: 39, description: 'AI生成的说唱伴奏曲', cover: 'https://picsum.photos/seed/product8/400/300', status: 'draft' as const },
+    { name: '产品宣传视频', category: 'video', price: 99, description: 'AI生成的产品宣传视频', cover: 'https://picsum.photos/seed/product9/400/300', status: 'offline' as const },
+    { name: '抽象艺术套图', category: 'image', price: 45, description: '抗象派风格的艺术插画', cover: 'https://picsum.photos/seed/product10/400/300', status: 'approved' as const },
+  ];
+
+  try {
+    for (const product of mockProducts) {
+      await createObject('Product', {
+        ...product,
+        creatorId: 'mock_user_id',
+        creatorName: '模拟用户',
+        creatorAddress: MOCK_USER_ADDRESS,
+        owner: MOCK_USER_ADDRESS, // 初始拥有者等于创建者
+        sales: Math.floor(Math.random() * 100),
+        likeCount: Math.floor(Math.random() * 50),
+        favoriteCount: Math.floor(Math.random() * 30),
+        views: Math.floor(Math.random() * 500),
+        rating: 3 + Math.random() * 2,
+        commentCount: 0,
+        tags: [],
+      });
+    }
+    console.log('[initMockProducts] 创建10条模拟数据成功');
+    return { success: true, message: '创建模拟数据成功' };
+  } catch (error) {
+    console.log('[initMockProducts] 创建失败:', error);
+    return { success: false, error: (error as Error).message };
+  }
+}
+
+// 清空模拟商品数据
+export async function clearMockProducts() {
+  try {
+    const result = await queryObjects('Product', { where: { creatorAddress: MOCK_USER_ADDRESS }, limit: 100 });
+    if (!result.data || result.data.length === 0) {
+      return { success: true, message: '没有模拟数据需要清空' };
+    }
+    for (const product of result.data) {
+      await deleteObject('Product', product.objectId);
+    }
+    console.log(`[clearMockProducts] 清空${result.data.length}条模拟数据成功`);
+    return { success: true, message: `清空${result.data.length}条模拟数据成功` };
+  } catch (error) {
+    console.log('[clearMockProducts] 清空失败:', error);
+    return { success: false, error: (error as Error).message };
+  }
+}
+
+// 为当前用户创建AIIP资产模拟数据
+export async function initUserAIIPAssets(userId: string, userAddress: string, userName: string) {
+  if (!userAddress) {
+    return { success: false, error: '请先登录Web3账户' };
+  }
+
+  const mockAssets = [
+    { name: '我的AI风景画', category: 'image', price: 35, description: '自己创作的风景插画', cover: 'https://picsum.photos/seed/aiip1/400/300', status: 'approved' as const },
+    { name: '原创背景音乐', category: 'audio', price: 25, description: '原创AI背景音乐', cover: 'https://picsum.photos/seed/aiip2/400/300', status: 'approved' as const },
+    { name: '动态Logo设计', category: 'video', price: 88, description: 'AI生成的动态Logo', cover: 'https://picsum.photos/seed/aiip3/400/300', status: 'approved' as const },
+    { name: '商业插画套图', category: 'image', price: 128, description: '商用级别的AI插画', cover: 'https://picsum.photos/seed/aiip4/400/300', status: 'pending' as const },
+    { name: '放松音乐合集', category: 'audio', price: 18, description: '放松身心的音乐', cover: 'https://picsum.photos/seed/aiip5/400/300', status: 'approved' as const },
+    { name: '科幻场景设计', category: 'image', price: 66, description: '未来科幻风格场景', cover: 'https://picsum.photos/seed/aiip6/400/300', status: 'draft' as const },
+    { name: '品牌宣传短片', category: 'video', price: 199, description: '品牌宣传短视频', cover: 'https://picsum.photos/seed/aiip7/400/300', status: 'offline' as const },
+    { name: '游戏UI素材', category: 'image', price: 45, description: '游戏界面UI素材包', cover: 'https://picsum.photos/seed/aiip8/400/300', status: 'approved' as const },
+    { name: '播客片头音乐', category: 'audio', price: 29, description: '播客节目片头音乐', cover: 'https://picsum.photos/seed/aiip9/400/300', status: 'approved' as const },
+    { name: '数字艺术NFT图', category: 'image', price: 299, description: '限量版数字艺术作品', cover: 'https://picsum.photos/seed/aiip10/400/300', status: 'approved' as const },
+  ];
+
+  try {
+    for (const asset of mockAssets) {
+      await createObject('AIIPAsset', {
+        name: asset.name,
+        category: asset.category,
+        description: asset.description,
+        cover: asset.cover,
+        status: asset.status,
+        price: asset.price,
+        ownerId: userId,
+        ownerAddress: userAddress,
+        ownerName: userName,
+        mockOwner: userAddress,
+        views: Math.floor(Math.random() * 300),
+        isListed: false,
+        tags: [],
+      });
+    }
+    console.log(`[initUserAIIPAssets] 为用户 ${userAddress} 创建10条AIIP资产成功`);
+    return { success: true, message: '创建10条AIIP资产成功' };
+  } catch (error) {
+    console.log('[initUserAIIPAssets] 创建失败:', error);
+    return { success: false, error: (error as Error).message };
+  }
+}
+
+// 清空当前用户的AIIP资产模拟数据
+export async function clearUserAIIPAssets(userAddress: string) {
+  if (!userAddress) {
+    return { success: false, error: '请先登录Web3账户' };
+  }
+  try {
+    // 只清除当前用户创建的AIIP模拟数据
+    const result = await queryObjects('AIIPAsset', { 
+      where: { mockOwner: userAddress }, 
+      limit: 100 
+    });
+    if (!result.data || result.data.length === 0) {
+      return { success: true, message: '没有AIIP资产需要清空' };
+    }
+    for (const asset of result.data) {
+      await deleteObject('AIIPAsset', asset.objectId);
+    }
+    console.log(`[clearUserAIIPAssets] 清空${result.data.length}条AIIP资产成功`);
+    return { success: true, message: `清空${result.data.length}条AIIP资产成功` };
+  } catch (error) {
+    console.log('[clearUserAIIPAssets] 清空失败:', error);
+    return { success: false, error: (error as Error).message };
+  }
+}
+
+// 为商城创建模拟商品数据（供购买测试）
+export async function initMarketMockProducts(userAddress: string) {
+  if (!userAddress) {
+    return { success: false, error: '请先登录Web3账户' };
+  }
+
+  const mockProducts = [
+    { name: '梦幻星空壁纸', category: 'image', price: 29, description: 'AI生成的奇幻星空场景', cover: 'https://picsum.photos/seed/market1/400/300' },
+    { name: '电子音乐合集', category: 'audio', price: 49, description: '原创AI电子音乐合集', cover: 'https://picsum.photos/seed/market2/400/300' },
+    { name: '动态卡通头像', category: 'video', price: 19, description: '可爱的动态卡通头像', cover: 'https://picsum.photos/seed/market3/400/300' },
+    { name: '赛博朋克风格套图', category: 'image', price: 39, description: '赛博朋克风格的城市场景套图', cover: 'https://picsum.photos/seed/market4/400/300' },
+    { name: '自然白噪音合集', category: 'audio', price: 9, description: '放松的自然白噪音', cover: 'https://picsum.photos/seed/market5/400/300' },
+    { name: 'Q版游戏角色', category: 'image', price: 59, description: 'Q版风格的游戏角色设计', cover: 'https://picsum.photos/seed/market6/400/300' },
+    { name: '古风水墨画套图', category: 'image', price: 79, description: '中国风水墨画风格插画', cover: 'https://picsum.photos/seed/market7/400/300' },
+    { name: '说唱伴奏曲', category: 'audio', price: 39, description: 'AI生成的说唱伴奏曲', cover: 'https://picsum.photos/seed/market8/400/300' },
+    { name: '产品宣传视频', category: 'video', price: 99, description: 'AI生成的产品宣传视频', cover: 'https://picsum.photos/seed/market9/400/300' },
+    { name: '抽象艺术套图', category: 'image', price: 45, description: '抽象派风格的艺术插画', cover: 'https://picsum.photos/seed/market10/400/300' },
+  ];
+
+  try {
+    for (const product of mockProducts) {
+      await createObject('Product', {
+        ...product,
+        status: 'approved',
+        creatorId: userAddress,
+        creatorName: '当前用户',
+        creatorAddress: userAddress,
+        owner: userAddress, // 当前用户拥有
+        mockType: 'market', // 标记为商城模拟数据
+        mockOwner: userAddress, // 记录是谁创建的
+        sales: Math.floor(Math.random() * 100),
+        likeCount: Math.floor(Math.random() * 50),
+        favoriteCount: Math.floor(Math.random() * 30),
+        views: Math.floor(Math.random() * 500),
+        rating: 3 + Math.random() * 2,
+        commentCount: 0,
+        tags: [],
+      });
+    }
+    console.log(`[initMarketMockProducts] 创建10条当前用户的模拟商品成功`);
+    return { success: true, message: '创建10条当前用户的模拟商品成功' };
+  } catch (error) {
+    console.log('[initMarketMockProducts] 创建失败:', error);
+    return { success: false, error: (error as Error).message };
+  }
+}
+
+// 清空当前用户创建的商城模拟数据
+export async function clearMarketMockProducts(userAddress: string) {
+  if (!userAddress) {
+    return { success: false, error: '请先登录Web3账户' };
+  }
+  try {
+    // 只清除当前用户创建的商城模拟数据
+    const result = await queryObjects('Product', { 
+      where: { mockType: 'market', mockOwner: userAddress }, 
+      limit: 100 
+    });
+    if (!result.data || result.data.length === 0) {
+      return { success: true, message: '没有商城模拟数据需要清空' };
+    }
+    for (const product of result.data) {
+      await deleteObject('Product', product.objectId);
+    }
+    console.log(`[clearMarketMockProducts] 清空${result.data.length}条商城模拟数据成功`);
+    return { success: true, message: `清空${result.data.length}条商城模拟数据成功` };
+  } catch (error) {
+    console.log('[clearMarketMockProducts] 清空失败:', error);
+    return { success: false, error: (error as Error).message };
+  }
 }
 
 // ============ 资产 ============
@@ -614,7 +877,10 @@ export interface AITask {
 }
 
 export async function createAITask(task: Omit<AITask, 'objectId' | 'createdAt'>) {
-  return createObject('AITask', task);
+  console.log('[createAITask] 创建任务:', JSON.stringify(task, null, 2));
+  const result = await createObject('AITask', task);
+  console.log('[createAITask] 结果:', JSON.stringify(result, null, 2));
+  return result;
 }
 
 export async function getAITask(taskId: string) {
@@ -622,20 +888,40 @@ export async function getAITask(taskId: string) {
 }
 
 export async function getUserAITasks(userId: string, options?: { type?: string; status?: number; page?: number; limit?: number }) {
+  console.log('[getUserAITasks] 查询用户任务, userId:', userId, 'options:', options);
   const where: Record<string, unknown> = { designer: userId };
   if (options?.type && options.type !== 'all') where.type = options.type;
   if (options?.status !== undefined) where.status = options.status;
-  return paginatedQuery<AITask>('AITask', where, options?.page || 1, options?.limit || 20);
+  console.log('[getUserAITasks] where:', JSON.stringify(where));
+  const result = await paginatedQuery<AITask>('AITask', where, options?.page || 1, options?.limit || 20);
+  console.log('[getUserAITasks] 结果:', result.success, '总数:', result.total);
+  return result;
 }
 
 export async function pollAITaskStatus(taskId: string, maxAttempts = 60, interval = 2000) {
+  console.log(`[pollAITaskStatus] 开始轮询任务: ${taskId}`);
   for (let i = 0; i < maxAttempts; i++) {
     const result = await getAITask(taskId);
-    if (!result.success) return result;
+    if (!result.success) {
+      console.log(`[pollAITaskStatus] 查询失败: ${result.error}`);
+      return result;
+    }
     const task = result.data as AITask;
-    if (task?.status === 2 || task?.status === 3) return result; // 2:完成, 3:失败
+    if (task?.status === 2) {
+      console.log(`[pollAITaskStatus] 任务完成`);
+      return result; // 2:完成
+    }
+    if (task?.status === 3) {
+      console.log(`[pollAITaskStatus] 任务失败`);
+      return result; // 3:失败
+    }
+    // 每10次输出一次状态
+    if (i % 10 === 0) {
+      console.log(`[pollAITaskStatus] 第${i + 1}次轮询, 状态: ${task?.status}`);
+    }
     await new Promise(resolve => setTimeout(resolve, interval));
   }
+  console.log(`[pollAITaskStatus] 任务超时`);
   return { success: false, error: '任务超时' };
 }
 
@@ -645,15 +931,19 @@ export interface Order {
   objectId: string;
   orderNo: string;
   userId: string;
-  productId?: string;
-  productName?: string;
+  buyerAddress: string;  // 买家web3地址
+  sellerAddress: string; // 卖家web3地址
+  productId: string;
+  productName: string;
   productImage?: string;
   type: 'purchase' | 'subscription' | 'recharge';
   amount: number;
-  coins?: number;
-  status: 'pending' | 'paid' | 'completed' | 'cancelled' | 'refunded';
-  paymentMethod?: string;
+  status: 'pending' | 'paid' | 'payment_failed' | 'completed' | 'cancelled' | 'refunded';
+  paymentMethod: 'web3' | 'coins';
+  txHash?: string;       // 链上交易hash
   createdAt: string;
+  paidAt?: string;
+  completedAt?: string;
 }
 
 export interface Transaction {
@@ -691,6 +981,75 @@ export async function getUserOrders(userId: string, options?: { status?: string;
   const where: Record<string, unknown> = { userId };
   if (options?.status && options.status !== 'all') where.status = options.status;
   return paginatedQuery<Order>('Order', where, options?.page || 1, options?.limit || 20);
+}
+
+// 创建订单
+export async function createOrder(order: Omit<Order, 'objectId' | 'createdAt' | 'orderNo'>) {
+  const orderNo = `ORD${Date.now()}${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+  return createObject('Order', { ...order, orderNo });
+}
+
+// 创建待支付订单（第一步：客户端创建订单）
+export async function createPendingOrder(buyerId: string, buyerAddress: string, product: Product) {
+  try {
+    const orderResult = await createOrder({
+      userId: buyerId,
+      buyerAddress,
+      sellerAddress: product.owner,
+      productId: product.objectId,
+      productName: product.name,
+      productImage: product.cover,
+      type: 'purchase',
+      amount: product.price,
+      status: 'pending',
+      paymentMethod: 'web3',
+    });
+    if (!orderResult.success) {
+      throw new Error(orderResult.error || '创建订单失败');
+    }
+    return { 
+      success: true, 
+      orderId: orderResult.data?.objectId,
+      orderNo: orderResult.data?.orderNo,
+      sellerAddress: product.owner,
+      amount: product.price,
+    };
+  } catch (error) {
+    return { success: false, error: (error as Error).message };
+  }
+}
+
+// 查询订单状态
+export async function getOrderStatus(orderId: string) {
+  return getObject('Order', orderId);
+}
+
+// 更新订单交易hash（用户转账后调用）
+export async function updateOrderTxHash(orderId: string, txHash: string) {
+  return updateObject('Order', orderId, { txHash, status: 'paid' });
+}
+
+// 取消订单
+export async function cancelOrder(orderId: string) {
+  return updateObject('Order', orderId, { status: 'cancelled' });
+}
+
+// 验证Web3转账并完成订单（调用FastAPI）
+export async function verifyTransferAndCompleteOrder(orderId: string, txHash: string) {
+  try {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/payment/verify-transfer`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ order_id: orderId, tx_hash: txHash }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      return { success: false, error: data.detail || '验证失败' };
+    }
+    return { success: true, message: data.message };
+  } catch (error) {
+    return { success: false, error: (error as Error).message };
+  }
 }
 
 export async function getUserTransactions(userId: string, options?: { type?: string; page?: number; limit?: number }) {
