@@ -88,7 +88,7 @@ function LoginContent() {
       phone: user.phone,
       role: user.role || 'user',
       level: user.level || 1,
-      isPaid: user.isPaid || false,
+      memberLevel: user.memberLevel || 'normal',
       inviteCount: user.inviteCount || 0,
       successRegCount: user.successRegCount || 0,
       totalIncentive: user.totalIncentive || 0,
@@ -313,7 +313,7 @@ function LoginContent() {
         </CardHeader>
         <CardContent>
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-3">
+            <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="password">
                 <Mail className="mr-2 h-4 w-4" />
                 账号登录
@@ -322,10 +322,12 @@ function LoginContent() {
                 <Smartphone className="mr-2 h-4 w-4" />
                 手机登录
               </TabsTrigger>
+              {/* Web3登录暂时隐藏，等待Electron客户端完成
               <TabsTrigger value="web3">
                 <Wallet className="mr-2 h-4 w-4" />
                 WEB3登录
               </TabsTrigger>
+              */}
             </TabsList>
 
             {/* 账号密码登录 */}
@@ -404,7 +406,8 @@ function LoginContent() {
               </div>
             </TabsContent>
 
-            {/* WEB3 登录 */}
+            {/* WEB3 登录 - 暂时隐藏，等待Electron客户端完成 */}
+            {false && (
             <TabsContent value="web3" className="mt-4">
               <div className="space-y-4">
                 {/* 有 MetaMask 时：显示 MetaMask + 密码 */}
@@ -557,11 +560,12 @@ function LoginContent() {
                 )}
               </div>
             </TabsContent>
+            )}
           </Tabs>
 
           <div className="mt-6 text-center text-sm">
             还没有账号？{' '}
-            <Link href={activeTab === 'web3' ? '/register?tab=web3' : '/register'} className="text-primary hover:underline">
+            <Link href="/register" className="text-primary hover:underline">
               立即注册
             </Link>
           </div>

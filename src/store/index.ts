@@ -30,8 +30,8 @@ interface User {
   phone?: string;
   role: string;
   level: number;
-  isPaid: boolean;
-  paidExpireAt?: Date;
+  memberLevel: 'normal' | 'vip' | 'svip';
+  memberExpireAt?: Date;
   web3Address?: string;
   inviteCount: number;
   successRegCount: number;

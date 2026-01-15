@@ -102,7 +102,7 @@ function RegisterContent() {
       phone: user.phone,
       role: user.role || 'user',
       level: user.level || 1,
-      isPaid: user.isPaid || false,
+      memberLevel: user.memberLevel || 'normal',
       inviteCount: user.inviteCount || 0,
       successRegCount: user.successRegCount || 0,
       totalIncentive: user.totalIncentive || 0,
@@ -480,7 +480,8 @@ function RegisterContent() {
               </div>
             </TabsContent>
 
-            {/* Web3 注册 */}
+            {/* Web3 注册 - 暂时隐藏，等待Electron客户端完成 */}
+            {false && (
             <TabsContent value="web3" className="mt-4">
               <div className="space-y-4">
                 {/* 有 MetaMask 时：显示 MetaMask + 密码 */}
@@ -621,11 +622,12 @@ function RegisterContent() {
                 )}
               </div>
             </TabsContent>
+            )}
           </Tabs>
 
           <div className="mt-6 text-center text-sm">
             已有账号？{' '}
-            <Link href={activeTab === 'web3' ? '/login?tab=web3' : '/login'} className="text-primary hover:underline">立即登录</Link>
+            <Link href="/login" className="text-primary hover:underline">立即登录</Link>
           </div>
           <p className="mt-4 text-center text-xs text-muted-foreground">
             注册即表示您同意{' '}
@@ -644,5 +646,7 @@ export default function RegisterPage() {
     <Suspense fallback={<div className="flex items-center justify-center p-8"><Loader2 className="h-8 w-8 animate-spin" /></div>}>
       <RegisterContent />
     </Suspense>
+  );
+}
   );
 }

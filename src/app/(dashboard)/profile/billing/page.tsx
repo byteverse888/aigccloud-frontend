@@ -14,15 +14,6 @@ import { paymentApi } from '@/lib/api';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
 
-// 会员套餐
-const membershipPlans = [
-  { id: 'trial', name: '试用会员', price: 0.1, days: 3, coins: 100, desc: '3天体验会员权益', trial: true },
-  { id: 'monthly', name: '月度会员', price: 29, days: 30, coins: 2900, desc: '基础会员权益' },
-  { id: 'halfyear', name: '半年会员', price: 99, days: 180, coins: 9900, desc: '半年超值套餐', popular: true },
-  { id: 'yearly', name: '一年会员', price: 139, days: 365, coins: 13900, desc: '年度优惠套餐' },
-  { id: 'threeyear', name: '三年会员', price: 299, days: 1095, coins: 29900, desc: '三年长期套餐' },
-];
-
 // 金币套餐
 const coinPackages = [
   { id: 'coin1000', coins: 1000, price: 10 },
@@ -69,47 +60,9 @@ export default function BillingPage() {
     loadTransactions();
   }, [user?.objectId]);
 
-  // 发起订阅支付
-  const handleSubscribe = async (planId: string, price: number) => {
-    if (!user?.objectId) {
-      toast.error('请先登录');
-      return;
-    }
-
-    setPaying(true);
-    try {
-      const response = await paymentApi.createOrder({
-        user_id: user.objectId,
-        amount: price,
-        type: 'subscription',
-        plan: planId,
-        payment_method: 'wechat',
-      });
-
-      if (response.order_id) {
-        setPaymentInfo({
-          orderId: response.order_id,
-          orderNo: response.order_no,
-          amount: response.amount,
-          qrCode: response.qr_code || '',
-          status: response.status,
-        });
-        setPaymentOpen(true);
-        // 开始轮询订单状态
-        startPolling(response.order_id);
-      } else {
-        throw new Error('创建订单失败');
-      }
-    } catch (error) {
-      toast.error((error as Error).message || '创建订单失败');
-    } finally {
-      setPaying(false);
-    }
-  };
-
   // 发起金币充值
   const handleRecharge = async (coins: number, price: number) => {
-    if (!user?.objectId) {
+    if (!user?.objectId || !user?.sessionToken) {
       toast.error('请先登录');
       return;
     }
@@ -127,7 +80,7 @@ export default function BillingPage() {
         amount: price,
         type: 'recharge',
         payment_method: 'wechat',
-      });
+      }, user.sessionToken);
 
       if (response.order_id) {
         setPaymentInfo({
@@ -224,42 +177,15 @@ export default function BillingPage() {
                 <TabsTrigger value="history">交易记录</TabsTrigger>
               </TabsList>
 
-              {/* 会员订阅 */}
+              {/* 会员订阅 - 跳转到会员中心 */}
               <TabsContent value="membership" className="mt-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-                  {membershipPlans.map((plan) => (
-                    <Card 
-                      key={plan.id} 
-                      className={`${plan.popular ? 'border-primary' : ''} ${plan.trial ? 'border-orange-400 bg-orange-50/50 dark:bg-orange-950/20' : ''}`}
-                    >
-                      <CardContent className="p-6">
-                        {plan.popular && (
-                          <Badge className="mb-2">推荐</Badge>
-                        )}
-                        {plan.trial && (
-                          <Badge variant="outline" className="mb-2 border-orange-400 text-orange-600">新人体验</Badge>
-                        )}
-                        <h3 className="text-lg font-bold">{plan.name}</h3>
-                        <div className="my-4">
-                          <span className="text-3xl font-bold">¥{plan.price}</span>
-                          <span className="text-muted-foreground">/{plan.days}天</span>
-                        </div>
-                        <p className="text-sm text-muted-foreground mb-4">{plan.desc}</p>
-                        <div className="text-sm text-primary mb-4">
-                          赠送 {plan.coins} 金币
-                        </div>
-                        <Button 
-                          className="w-full" 
-                          variant={plan.trial ? 'default' : 'outline'}
-                          onClick={() => handleSubscribe(plan.id, plan.price)}
-                          disabled={paying}
-                        >
-                          {paying ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                          {plan.trial ? '立即体验' : '立即订阅'}
-                        </Button>
-                      </CardContent>
-                    </Card>
-                  ))}
+                <div className="text-center py-12">
+                  <CreditCard className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
+                  <h3 className="text-xl font-bold mb-2">会员订阅</h3>
+                  <p className="text-muted-foreground mb-6">请前往会员中心订阅会员套餐</p>
+                  <Link href="/profile/membership">
+                    <Button>前往会员中心</Button>
+                  </Link>
                 </div>
               </TabsContent>
 

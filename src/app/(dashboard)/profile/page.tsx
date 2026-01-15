@@ -118,17 +118,17 @@ export default function ProfilePage() {
               <div className="flex-1 text-center md:text-left">
                 <div className="flex items-center justify-center md:justify-start gap-2">
                   <h2 className="text-2xl font-bold">{user?.username || 'User'}</h2>
-                  {user?.isPaid && (
+                  {user?.memberLevel && user.memberLevel !== 'normal' && (
                     <>
                       <Badge variant="default">会员</Badge>
-                      <Badge variant="secondary">VIP</Badge>
+                      <Badge variant="secondary">{user.memberLevel.toUpperCase()}</Badge>
                     </>
                   )}
                 </div>
                 <p className="text-muted-foreground mt-1">{user?.email || ''}</p>
-                {user?.isPaid && user?.paidExpireAt && (
+                {user?.memberLevel && user.memberLevel !== 'normal' && user?.memberExpireAt && (
                   <p className="text-sm text-muted-foreground mt-1">
-                    会员有效期至：{new Date(user.paidExpireAt).toLocaleDateString()}
+                    会员有效期至：{new Date(user.memberExpireAt).toLocaleDateString()}
                   </p>
                 )}
               </div>

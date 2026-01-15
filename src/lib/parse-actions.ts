@@ -88,8 +88,8 @@ export interface ParseUser {
   phone?: string;
   role?: string;
   level?: number;
-  isPaid?: boolean;
-  paidExpireAt?: string;
+  memberLevel?: 'normal' | 'vip' | 'svip';
+  memberExpireAt?: string;
   web3Address?: string;
   inviteCount?: number;
   successRegCount?: number;
@@ -242,7 +242,7 @@ export async function loginUser(username: string, password: string) {
 export async function registerUser(username: string, email: string, password: string) {
   try {
     const result = await parseRequest('/users', 'POST', {
-      username, email, password, role: 'user', level: 1, isPaid: false,
+      username, email, password, role: 'user', level: 1, memberLevel: 'normal',
       inviteCount: 0, successRegCount: 0, totalIncentive: 0,
     });
     return { success: true, user: result as ParseUser };

@@ -5,12 +5,14 @@ async function fetchApi<T = any>(
   endpoint: string,
   options?: RequestInit
 ): Promise<T> {
+  const { headers: customHeaders, ...restOptions } = options || {};
+  
   const response = await fetch(`${API_URL}${endpoint}`, {
+    ...restOptions,
     headers: {
       'Content-Type': 'application/json',
-      ...options?.headers,
+      ...customHeaders,
     },
-    ...options,
   });
 
   if (!response.ok) {
@@ -92,7 +94,7 @@ export const authApi = {
         phone?: string;
         role: string;
         level: number;
-        isPaid: boolean;
+        memberLevel: 'normal' | 'vip' | 'svip';
         coins: number;
         avatar?: string;
         avatarKey?: string;
@@ -122,7 +124,7 @@ export const authApi = {
         phone?: string;
         role: string;
         level: number;
-        isPaid: boolean;
+        memberLevel: 'normal' | 'vip' | 'svip';
         coins: number;
         avatar?: string;
         avatarKey?: string;
@@ -150,9 +152,10 @@ export const paymentApi = {
     plan?: string;
     product_id?: string;
     payment_method?: string;
-  }) =>
+  }, sessionToken?: string) =>
     fetchApi('/api/v1/payment/create-order', {
       method: 'POST',
+      headers: sessionToken ? { 'X-Parse-Session-Token': sessionToken } : {},
       body: JSON.stringify(data),
     }),
 

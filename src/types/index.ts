@@ -1,4 +1,6 @@
 // User Types
+export type MemberLevel = 'normal' | 'vip' | 'svip';
+
 export interface User {
   objectId: string;
   username: string;
@@ -6,8 +8,8 @@ export interface User {
   phone?: string;
   role: 'user' | 'operator' | 'channel' | 'admin';
   level: number;
-  isPaid: boolean;
-  paidExpireAt?: Date;
+  memberLevel: MemberLevel;
+  memberExpireAt?: Date;
   web3Address?: string;
   inviteCount: number;
   successRegCount: number;
@@ -148,19 +150,19 @@ export interface Notification {
 }
 
 // Subscription Types
-export type SubscriptionPlan = 'monthly' | 'halfyear' | 'yearly' | 'threeyear';
+export type SubscriptionPlan = 'vip_month' | 'vip_half' | 'vip_year' | 'vip_3year' | 'svip_month' | 'svip_half' | 'svip_year' | 'svip_3year';
 
 export interface SubscriptionInfo {
-  plan: SubscriptionPlan;
+  planId: string;
   name: string;
-  price: number;
+  level: MemberLevel;
   days: number;
-  description: string;
-  coins: number;
+  price: number;
+  bonus: number;
 }
 
 // Incentive Types
-export type IncentiveType = 'register' | 'daily_login' | 'invite' | 'task' | 'activity';
+export type IncentiveType = 'register' | 'daily_login' | 'invite' | 'task' | 'activity' | 'member_subscribe';
 
 export interface Incentive {
   objectId: string;

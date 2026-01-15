@@ -29,17 +29,17 @@ interface User {
   email: string;
   role: string;
   level: number;
-  isPaid: boolean;
+  memberLevel: 'normal' | 'vip' | 'svip';
   createdAt: string;
   status: 'active' | 'inactive' | 'banned';
 }
 
 const mockUsers: User[] = [
-  { id: '1', username: 'user1', email: 'user1@example.com', role: 'user', level: 1, isPaid: true, createdAt: '2024-01-15', status: 'active' },
-  { id: '2', username: 'user2', email: 'user2@example.com', role: 'user', level: 2, isPaid: false, createdAt: '2024-01-14', status: 'active' },
-  { id: '3', username: 'creator1', email: 'creator1@example.com', role: 'operator', level: 3, isPaid: true, createdAt: '2024-01-13', status: 'active' },
-  { id: '4', username: 'banned_user', email: 'banned@example.com', role: 'user', level: 1, isPaid: false, createdAt: '2024-01-12', status: 'banned' },
-  { id: '5', username: 'channel_user', email: 'channel@example.com', role: 'channel', level: 2, isPaid: true, createdAt: '2024-01-11', status: 'active' },
+  { id: '1', username: 'user1', email: 'user1@example.com', role: 'user', level: 1, memberLevel: 'vip', createdAt: '2024-01-15', status: 'active' },
+  { id: '2', username: 'user2', email: 'user2@example.com', role: 'user', level: 2, memberLevel: 'normal', createdAt: '2024-01-14', status: 'active' },
+  { id: '3', username: 'creator1', email: 'creator1@example.com', role: 'operator', level: 3, memberLevel: 'svip', createdAt: '2024-01-13', status: 'active' },
+  { id: '4', username: 'banned_user', email: 'banned@example.com', role: 'user', level: 1, memberLevel: 'normal', createdAt: '2024-01-12', status: 'banned' },
+  { id: '5', username: 'channel_user', email: 'channel@example.com', role: 'channel', level: 2, memberLevel: 'vip', createdAt: '2024-01-11', status: 'active' },
 ];
 
 const roleLabels: Record<string, string> = {
@@ -85,11 +85,11 @@ export default function AdminUsersPage() {
       cell: ({ row }) => `Lv.${row.original.level}`,
     },
     {
-      accessorKey: 'isPaid',
+      accessorKey: 'memberLevel',
       header: '会员',
       cell: ({ row }) => (
-        <Badge variant={row.original.isPaid ? 'default' : 'outline'}>
-          {row.original.isPaid ? '付费会员' : '免费用户'}
+        <Badge variant={row.original.memberLevel !== 'normal' ? 'default' : 'outline'}>
+          {row.original.memberLevel === 'normal' ? '普通用户' : row.original.memberLevel.toUpperCase()}
         </Badge>
       ),
     },
