@@ -29,7 +29,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Sparkles, Mail, Smartphone, Wallet, Loader2, Key, FileText, AlertTriangle } from 'lucide-react';
 
 const loginSchema = z.object({
-  username: z.string().min(1, '请输入用户名或邮箱'),
+  username: z.string().min(1, '请输入用户名/手机号/邮箱'),
   password: z.string().min(6, '密码至少6位'),
 });
 
@@ -98,20 +98,36 @@ function LoginContent() {
     });
   };
 
-  // 账号密码登录
+  // 账号密码登录（支持用户名/手机号/邮箱）
   const onSubmit = async (data: LoginFormData) => {
     setIsLoading(true);
     try {
-      const result = await loginUser(data.username, data.password);
-      if (result.success && result.user) {
-        handleSetUser(result.user);
-        toast.success('登录成功');
-        router.push('/');
+      // 先尝试邮箱登录（如果是邮箱格式）
+      const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+      const isEmail = emailRegex.test(data.username);
+      
+      if (isEmail) {
+        // 使用邮箱登录 API
+        const emailResult = await authApi.emailLogin(data.username, data.password);
+        if (emailResult.success && emailResult.user) {
+          handleSetUser(emailResult.user, emailResult.token);
+          toast.success('登录成功');
+          router.push('/');
+          return;
+        }
       } else {
-        toast.error(result.error || '登录失败');
+        // 使用传统登录（用户名或手机号）
+        const result = await loginUser(data.username, data.password);
+        if (result.success && result.user) {
+          handleSetUser(result.user);
+          toast.success('登录成功');
+          router.push('/');
+        } else {
+          toast.error(result.error || '登录失败');
+        }
       }
     } catch (error) {
-      toast.error('登录失败，请稍后重试');
+      toast.error((error as Error).message || '登录失败');
     } finally {
       setIsLoading(false);
     }
@@ -334,10 +350,10 @@ function LoginContent() {
             <TabsContent value="password" className="mt-4">
               <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="username">用户名 / 邮箱</Label>
+                  <Label htmlFor="username">用户名 / 手机号 / 邮箱</Label>
                   <Input
                     id="username"
-                    placeholder="请输入用户名或邮箱"
+                    placeholder="请输入用户名/手机号/邮箱"
                     autoComplete="username"
                     {...register('username')}
                     disabled={isLoading}

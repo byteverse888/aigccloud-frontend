@@ -116,13 +116,14 @@ function RegisterContent() {
   const onSubmit = async (data: RegisterFormData) => {
     setIsLoading(true);
     try {
-      await userApi.register({
-        username: data.username,
-        email: data.email,
-        password: data.password,
-      });
-      setEmailSent(true);
-      toast.success('注册成功，请查收激活邮件');
+      // 调用新的邮箱注册接口
+      const result = await authApi.emailRegister(data.email, data.password);
+      if (result.success) {
+        setEmailSent(true);
+        toast.success('注册成功，请查收激活邮件');
+      } else {
+        toast.error('注册失败');
+      }
     } catch (error) {
       toast.error((error as Error).message || '注册失败');
     } finally {
@@ -375,7 +376,7 @@ function RegisterContent() {
         </CardHeader>
         <CardContent>
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-3">
+            <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="email">
                 <Mail className="mr-2 h-4 w-4" />
                 邮箱注册
@@ -384,10 +385,12 @@ function RegisterContent() {
                 <Smartphone className="mr-2 h-4 w-4" />
                 手机注册
               </TabsTrigger>
+              {/* Web3注册暂时隐藏，等待Electron客户端完成
               <TabsTrigger value="web3">
                 <Wallet className="mr-2 h-4 w-4" />
                 WEB3账户
               </TabsTrigger>
+              */}
             </TabsList>
 
             {/* 邮箱注册 */}
@@ -554,8 +557,14 @@ function RegisterContent() {
                             <div className="space-y-2">
                               <Label className="text-xs">钱包地址</Label>
                               <div className="flex gap-2">
-                                <Input value={generatedWallet.address} readOnly className="text-xs font-mono" />
-                                <Button size="icon" variant="outline" onClick={() => copyToClipboard(generatedWallet.address, 'address')}>
+                                <Input value={generatedWallet?.address || ''} readOnly className="text-xs font-mono" />
+                                <Button 
+                                  size="icon" 
+                                  variant="outline" 
+                                  onClick={() => {
+                                    if (generatedWallet) copyToClipboard(generatedWallet.address, 'address');
+                                  }}
+                                >
                                   {copied === 'address' ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                                 </Button>
                               </div>
@@ -563,8 +572,14 @@ function RegisterContent() {
                             <div className="space-y-2">
                               <Label className="text-xs">助记词（12个单词）</Label>
                               <div className="flex gap-2">
-                                <Textarea value={generatedWallet.mnemonic} readOnly className="text-xs font-mono" rows={2} />
-                                <Button size="icon" variant="outline" onClick={() => copyToClipboard(generatedWallet.mnemonic, 'mnemonic')}>
+                                <Textarea value={generatedWallet?.mnemonic || ''} readOnly className="text-xs font-mono" rows={2} />
+                                <Button 
+                                  size="icon" 
+                                  variant="outline" 
+                                  onClick={() => {
+                                    if (generatedWallet) copyToClipboard(generatedWallet.mnemonic, 'mnemonic');
+                                  }}
+                                >
                                   {copied === 'mnemonic' ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                                 </Button>
                               </div>
@@ -572,8 +587,14 @@ function RegisterContent() {
                             <div className="space-y-2">
                               <Label className="text-xs">私钥</Label>
                               <div className="flex gap-2">
-                                <Input type="password" value={generatedWallet.privateKey} readOnly className="text-xs font-mono" />
-                                <Button size="icon" variant="outline" onClick={() => copyToClipboard(generatedWallet.privateKey, 'privateKey')}>
+                                <Input type="password" value={generatedWallet?.privateKey || ''} readOnly className="text-xs font-mono" />
+                                <Button 
+                                  size="icon" 
+                                  variant="outline" 
+                                  onClick={() => {
+                                    if (generatedWallet) copyToClipboard(generatedWallet.privateKey, 'privateKey');
+                                  }}
+                                >
                                   {copied === 'privateKey' ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                                 </Button>
                               </div>
@@ -646,7 +667,5 @@ export default function RegisterPage() {
     <Suspense fallback={<div className="flex items-center justify-center p-8"><Loader2 className="h-8 w-8 animate-spin" /></div>}>
       <RegisterContent />
     </Suspense>
-  );
-}
   );
 }

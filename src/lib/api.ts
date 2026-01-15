@@ -101,10 +101,6 @@ export const authApi = {
         web3Address: string;
         inviteCount: number;
       };
-      parse_config: {
-        serverUrl: string;
-        appId: string;
-      };
       is_new_user: boolean;
       message: string;
     }>('/api/v1/auth/web3/register', {
@@ -131,15 +127,56 @@ export const authApi = {
         web3Address: string;
         inviteCount: number;
       };
-      parse_config: {
-        serverUrl: string;
-        appId: string;
-      };
       is_new_user: boolean;
       message: string;
     }>('/api/v1/auth/web3/login', {
       method: 'POST',
       body: JSON.stringify({ address, signature, message, password }),
+    }),
+
+  // 邮箱注册
+  emailRegister: (email: string, password: string) =>
+    fetchApi<{
+      success: boolean;
+      message: string;
+      email: string;
+    }>('/api/v1/auth/email/register', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    }),
+
+  // 邮箱激活
+  emailActivate: (token: string) =>
+    fetchApi<{
+      success: boolean;
+      message: string;
+      email: string;
+    }>(`/api/v1/auth/email/activate?token=${token}`),
+
+  // 邮箱登录
+  emailLogin: (email: string, password: string) =>
+    fetchApi<{
+      success: boolean;
+      token: string;
+      user: {
+        objectId: string;
+        sessionToken: string;
+        username: string;
+        email?: string;
+        phone?: string;
+        role: string;
+        level: number;
+        memberLevel: 'normal' | 'vip' | 'svip';
+        coins: number;
+        avatar?: string;
+        avatarKey?: string;
+        web3Address?: string;
+        inviteCount: number;
+      };
+      message: string;
+    }>('/api/v1/auth/email/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
     }),
 };
 

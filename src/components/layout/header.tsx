@@ -47,7 +47,12 @@ export function Header() {
   useEffect(() => {
     if (user?.objectId) {
       getUserNotifications(user.objectId, { unreadOnly: true, limit: 1 })
-        .then(res => setUnreadCount(res.total || 0));
+        .then(res => setUnreadCount(res.total || 0))
+        .catch(err => {
+          // Notification 表不存在时静默失败，不影响功能
+          console.debug('[Notification] 查询失败:', err.message);
+          setUnreadCount(0);
+        });
     }
   }, [user?.objectId]);
 

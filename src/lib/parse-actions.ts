@@ -64,7 +64,10 @@ async function parseRequest(
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
       const errorMsg = translateError(error.error || `HTTP ${response.status}`, body);
-      console.log(`[ParseRequest] 错误: ${method} ${endpoint} - ${response.status} - ${errorMsg}`);
+      // 不显示 Notification 表不存在的预期错误
+      if (!errorMsg.includes('non-existent class: Notification')) {
+        console.log(`[ParseRequest] 错误: ${method} ${endpoint} - ${response.status} - ${errorMsg}`);
+      }
       throw new Error(errorMsg);
     }
     const result = await response.json();
@@ -73,7 +76,11 @@ async function parseRequest(
     }
     return result;
   } catch (error) {
-    console.log(`[ParseRequest] 异常: ${method} ${endpoint} -`, error);
+    // 不显示 Notification 表不存在的预期错误
+    const errorMsg = (error as Error).message;
+    if (!errorMsg.includes('non-existent class: Notification')) {
+      console.log(`[ParseRequest] 异常: ${method} ${endpoint} -`, error);
+    }
     throw error;
   }
 }
