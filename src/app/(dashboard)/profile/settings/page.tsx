@@ -30,7 +30,9 @@ import { updateUserProfile, changePassword } from '@/lib/parse-actions';
 import { useFileUpload } from '@/hooks/useFileUpload';
 import { useSignedUrl } from '@/hooks/useSignedUrl';
 import { getWalletBalance, getCoinBalance, getChainInfo } from '@/lib/web3-actions';
-import { generateWallet, importWalletFromPrivateKey } from '@/lib/web3-client';
+import { generateWalletWithPassword, importFromPrivateKeyWithPassword } from '@/lib/web3-client';
+import { walletApi } from '@/lib/api';
+import { CreateWalletDialog } from '@/components/wallet/CreateWalletDialog';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
 
@@ -68,6 +70,7 @@ export default function SettingsPage() {
   const [chainInfo, setChainInfo] = useState<{chainName?: string; chainId?: string}>({});
   const [isBindingWallet, setIsBindingWallet] = useState(false);
   const [showImportDialog, setShowImportDialog] = useState(false);
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [privateKeyInput, setPrivateKeyInput] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -135,8 +138,13 @@ export default function SettingsPage() {
     }
   };
 
-  // 创建新钱包
-  const handleCreateWallet = async () => {
+  // 创建新钱包（显示密码对话框）
+  const handleCreateWallet = () => {
+    setShowCreateDialog(true);
+  };
+
+  // 确认创建钱包（使用密码加密）
+  const handleConfirmCreateWallet = async (password: string) => {
     if (!user?.objectId || !user?.sessionToken) {
       toast.error('请先登录');
       return;
@@ -144,29 +152,36 @@ export default function SettingsPage() {
     
     setIsBindingWallet(true);
     try {
-      const result = await generateWallet();
-      if (!result.success || !result.address) {
+      // 1. 生成钱包并加密
+      const result = await generateWalletWithPassword(password);
+      if (!result.success || !result.address || !result.encryptedKeystore) {
         throw new Error(result.error || '创建钱包失败');
       }
       
-      // 保存到Parse
-      const updateResult = await updateUserProfile(
-        user.objectId,
-        { web3Address: result.address },
-        user.sessionToken
+      // 2. 保存到后端
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('未找到登录令牌');
+      }
+
+      const saveResult = await walletApi.createWallet(
+        result.address,
+        result.encryptedKeystore,
+        token
       );
       
-      if (updateResult.success) {
+      if (saveResult.success) {
         setWalletAddress(result.address);
         setUser({ ...user, web3Address: result.address });
         await loadWalletInfo(result.address);
+        setShowCreateDialog(false);
         toast.success('钱包创建成功');
         
-        // 提示用户保存私钥
-        if (result.privateKey) {
+        // 提示用户保存助记词
+        if (result.mnemonic) {
           toast(
-            `重要！请备份您的私钥\n${result.privateKey.slice(0, 20)}...`,
-            { duration: 10000 }
+            `重要！请备份您的助记词\n${result.mnemonic.slice(0, 30)}...`,
+            { duration: 15000 }
           );
         }
       }
@@ -188,22 +203,35 @@ export default function SettingsPage() {
       toast.error('请输入私钥');
       return;
     }
+
+    // 请求用户输入密码（为简化，此处直接使用 prompt，实际应用中应使用对话框）
+    const password = prompt('请设置钱包密码（用于加密存储）：');
+    if (!password || password.length < 6) {
+      toast.error('密码至少6位');
+      return;
+    }
     
     setIsBindingWallet(true);
     try {
-      const result = await importWalletFromPrivateKey(privateKeyInput.trim());
-      if (!result.success || !result.address) {
+      // 1. 导入并加密
+      const result = await importFromPrivateKeyWithPassword(privateKeyInput.trim(), password);
+      if (!result.success || !result.address || !result.encryptedKeystore) {
         throw new Error(result.error || '导入钱包失败');
       }
       
-      // 保存到Parse
-      const updateResult = await updateUserProfile(
-        user.objectId,
-        { web3Address: result.address },
-        user.sessionToken
+      // 2. 保存到后端
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('未找到登录令牌');
+      }
+
+      const saveResult = await walletApi.importWallet(
+        result.address,
+        result.encryptedKeystore,
+        token
       );
       
-      if (updateResult.success) {
+      if (saveResult.success) {
         setWalletAddress(result.address);
         setUser({ ...user, web3Address: result.address });
         await loadWalletInfo(result.address);
@@ -330,6 +358,14 @@ export default function SettingsPage() {
           返回用户中心
         </Link>
       </Button>
+
+      {/* 创建钱包密码对话框 */}
+      <CreateWalletDialog
+        open={showCreateDialog}
+        onOpenChange={setShowCreateDialog}
+        onConfirm={handleConfirmCreateWallet}
+        isLoading={isBindingWallet}
+      />
 
       <motion.div
         initial={{ opacity: 0, y: 20 }}

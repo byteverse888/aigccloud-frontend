@@ -269,6 +269,54 @@ export const promotionApi = {
     fetchApi(`/api/v1/promotion/stats/${userId}`),
 };
 
+// Wallet API
+export const walletApi = {
+  // 创建钱包（将加密后的 keystore 保存到服务器）
+  createWallet: (web3Address: string, encryptedKeystore: string, token: string) =>
+    fetchApi<{
+      success: boolean;
+      message: string;
+      web3Address: string;
+    }>('/api/v1/users/wallet/create', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ web3_address: web3Address, encrypted_keystore: encryptedKeystore }),
+    }),
+
+  // 导入钱包
+  importWallet: (web3Address: string, encryptedKeystore: string, token: string) =>
+    fetchApi<{
+      success: boolean;
+      message: string;
+      web3Address: string;
+    }>('/api/v1/users/wallet/import', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ web3_address: web3Address, encrypted_keystore: encryptedKeystore }),
+    }),
+
+  // 转账（使用密码解密 keystore 后转账）
+  transfer: (toAddress: string, amount: string, password: string, token: string) =>
+    fetchApi<{
+      success: boolean;
+      message: string;
+      txHash: string;
+      from: string;
+      to: string;
+      amount: string;
+    }>('/api/v1/users/wallet/transfer', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ to_address: toAddress, amount, password }),
+    }),
+};
+
 export default {
   user: userApi,
   auth: authApi,
@@ -276,4 +324,5 @@ export default {
   task: taskApi,
   incentive: incentiveApi,
   promotion: promotionApi,
+  wallet: walletApi,
 };
