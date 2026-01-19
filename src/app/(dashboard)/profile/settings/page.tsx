@@ -145,8 +145,13 @@ export default function SettingsPage() {
 
   // 确认创建钱包（使用密码加密）
   const handleConfirmCreateWallet = async (password: string) => {
-    if (!user?.objectId || !user?.sessionToken) {
+    if (!user?.objectId) {
       toast.error('请先登录');
+      return;
+    }
+    
+    if (!user?.sessionToken) {
+      toast.error('登录信息已过期，请重新登录');
       return;
     }
     
@@ -158,16 +163,11 @@ export default function SettingsPage() {
         throw new Error(result.error || '创建钱包失败');
       }
       
-      // 2. 保存到后端
-      const token = localStorage.getItem('token');
-      if (!token) {
-        throw new Error('未找到登录令牌');
-      }
-
+      // 2. 保存到后端（使用 user.sessionToken 作为认证）
       const saveResult = await walletApi.createWallet(
         result.address,
         result.encryptedKeystore,
-        token
+        user.sessionToken
       );
       
       if (saveResult.success) {
@@ -177,11 +177,15 @@ export default function SettingsPage() {
         setShowCreateDialog(false);
         toast.success('钱包创建成功');
         
-        // 提示用户保存助记词
+        // 显示完整的助记词信息
         if (result.mnemonic) {
-          toast(
-            `重要！请备份您的助记词\n${result.mnemonic.slice(0, 30)}...`,
-            { duration: 15000 }
+          // 使用 alert 显示完整助记词，确保用户看到并保存
+          alert(
+            `重要！请备份您的助记词（请勿截图或分享给他人）
+
+${result.mnemonic}
+
+请将以上12个单词安全保存，丢失后无法找回！`
           );
         }
       }
@@ -219,16 +223,11 @@ export default function SettingsPage() {
         throw new Error(result.error || '导入钱包失败');
       }
       
-      // 2. 保存到后端
-      const token = localStorage.getItem('token');
-      if (!token) {
-        throw new Error('未找到登录令牌');
-      }
-
+      // 2. 保存到后端（使用 user.sessionToken）
       const saveResult = await walletApi.importWallet(
         result.address,
         result.encryptedKeystore,
-        token
+        user.sessionToken
       );
       
       if (saveResult.success) {
