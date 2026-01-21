@@ -154,7 +154,7 @@ export default function SettingsPage() {
       return;
     }
     
-    if (!user?.sessionToken) {
+    if (!user?.jwtToken) {
       toast.error('登录信息已过期，请重新登录');
       return;
     }
@@ -167,11 +167,11 @@ export default function SettingsPage() {
         throw new Error(result.error || '创建钱包失败');
       }
       
-      // 2. 保存到后端（使用 user.sessionToken 作为认证）
+      // 2. 保存到后端（使用 JWT token 作为认证）
       const saveResult = await walletApi.createWallet(
         result.address,
         result.encryptedKeystore,
-        user.sessionToken
+        user.jwtToken
       );
       
       if (saveResult.success) {
@@ -202,7 +202,7 @@ ${result.mnemonic}
 
   // 导入钱包
   const handleImportWallet = async () => {
-    if (!user?.objectId || !user?.sessionToken) {
+    if (!user?.objectId || !user?.jwtToken) {
       toast.error('请先登录');
       return;
     }
@@ -227,11 +227,11 @@ ${result.mnemonic}
         throw new Error(result.error || '导入钱包失败');
       }
       
-      // 2. 保存到后端（使用 user.sessionToken）
+      // 2. 保存到后端（使用 JWT token）
       const saveResult = await walletApi.importWallet(
         result.address,
         result.encryptedKeystore,
-        user.sessionToken
+        user.jwtToken
       );
       
       if (saveResult.success) {
