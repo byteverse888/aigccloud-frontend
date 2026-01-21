@@ -315,6 +315,18 @@ export const walletApi = {
       },
       body: JSON.stringify({ to_address: toAddress, amount, password }),
     }),
+
+  // 解绑钱包
+  unbindWallet: (token: string) =>
+    fetchApi<{
+      success: boolean;
+      message: string;
+    }>('/api/v1/users/wallet/unbind', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    }),
 };
 
 export default {

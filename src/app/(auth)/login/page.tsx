@@ -79,15 +79,16 @@ function LoginContent() {
   });
 
   // 通用的设置用户信息
-  const handleSetUser = (user: any, token?: string) => {
-    // 优先使用 user.sessionToken (Parse session)，因为 Parse API 需要它
-    // token 是 JWT，用于后端 API 认证
+  const handleSetUser = (user: any, jwtToken?: string) => {
+    // sessionToken: Parse session token（用于 Parse API）
+    // jwtToken: JWT（用于后端 API）
     const parseSessionToken = user.sessionToken;
-    console.log('[Login] handleSetUser - JWT token:', token ? token.substring(0, 30) + '...' : 'undefined');
+    console.log('[Login] handleSetUser - JWT token:', jwtToken ? jwtToken.substring(0, 30) + '...' : 'undefined');
     console.log('[Login] handleSetUser - Parse sessionToken:', parseSessionToken ? parseSessionToken.substring(0, 30) + '...' : 'undefined');
     setUser({
       objectId: user.objectId,
-      sessionToken: parseSessionToken,  // 使用 Parse session token，不是 JWT
+      sessionToken: parseSessionToken,  // Parse session token
+      jwtToken: jwtToken,               // JWT token for backend API
       username: user.username,
       email: user.email,
       phone: user.phone,

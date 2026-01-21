@@ -16,7 +16,9 @@ import {
   EyeOff,
   ArrowLeft,
   Upload,
-  Loader2
+  Loader2,
+  Unlink,
+  AlertTriangle
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -71,6 +73,8 @@ export default function SettingsPage() {
   const [isBindingWallet, setIsBindingWallet] = useState(false);
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [showUnbindConfirm, setShowUnbindConfirm] = useState(false);
+  const [isUnbinding, setIsUnbinding] = useState(false);
   const [privateKeyInput, setPrivateKeyInput] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -242,6 +246,33 @@ ${result.mnemonic}
       toast.error((error as Error).message);
     } finally {
       setIsBindingWallet(false);
+    }
+  };
+
+  // 解绑钱包
+  const handleUnbindWallet = async () => {
+    if (!user?.objectId || !user?.jwtToken) {
+      toast.error('请先登录');
+      return;
+    }
+    
+    setIsUnbinding(true);
+    try {
+      const result = await walletApi.unbindWallet(user.jwtToken);
+      
+      if (result.success) {
+        // 清除本地状态
+        setWalletAddress('');
+        setWalletBalance('0');
+        setCoinBalance('0');
+        setUser({ ...user, web3Address: undefined });
+        setShowUnbindConfirm(false);
+        toast.success('钱包解绑成功');
+      }
+    } catch (error) {
+      toast.error((error as Error).message || '解绑失败');
+    } finally {
+      setIsUnbinding(false);
     }
   };
 
@@ -650,6 +681,52 @@ ${result.mnemonic}
                       >
                         刷新余额
                       </Button>
+                      
+                      {/* 解绑钱包按钮 */}
+                      {!showUnbindConfirm ? (
+                        <Button 
+                          variant="outline" 
+                          className="w-full text-destructive hover:text-destructive hover:bg-destructive/10"
+                          onClick={() => setShowUnbindConfirm(true)}
+                        >
+                          <Unlink className="h-4 w-4 mr-2" />
+                          解绑地址
+                        </Button>
+                      ) : (
+                        <div className="p-4 border border-destructive/50 rounded-lg bg-destructive/5 space-y-3">
+                          <div className="flex items-start gap-2">
+                            <AlertTriangle className="h-5 w-5 text-destructive mt-0.5" />
+                            <div>
+                              <p className="text-sm font-medium text-destructive">确认解绑钱包？</p>
+                              <p className="text-xs text-muted-foreground mt-1">
+                                解绑后钱包信息将被删除，无法找回。请确保已备份助记词或私钥。
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              className="flex-1"
+                              onClick={() => setShowUnbindConfirm(false)}
+                              disabled={isUnbinding}
+                            >
+                              取消
+                            </Button>
+                            <Button 
+                              variant="destructive" 
+                              size="sm"
+                              className="flex-1"
+                              onClick={handleUnbindWallet}
+                              disabled={isUnbinding}
+                            >
+                              {isUnbinding ? (
+                                <><Loader2 className="h-4 w-4 mr-2 animate-spin" />解绑中...</>
+                              ) : '确认解绑'}
+                            </Button>
+                          </div>
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
                 ) : (

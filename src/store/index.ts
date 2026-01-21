@@ -24,7 +24,8 @@ export const useUIStore = create<UIState>()(
 
 interface User {
   objectId: string;
-  sessionToken?: string;
+  sessionToken?: string;  // Parse session token (for Parse API)
+  jwtToken?: string;      // JWT token (for backend API)
   username: string;
   email: string;
   phone?: string;
