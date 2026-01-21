@@ -26,11 +26,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import { useAuthStore } from '@/store';
-import { updateUserProfile, changePassword } from '@/lib/parse-actions';
+import { updateUserProfile, changePassword, getUserById } from '@/lib/parse-actions';
 import { useFileUpload } from '@/hooks/useFileUpload';
 import { useSignedUrl } from '@/hooks/useSignedUrl';
 import { getWalletBalance, getCoinBalance, getChainInfo } from '@/lib/web3-actions';
-import { generateWalletWithPassword, importFromPrivateKeyWithPassword } from '@/lib/web3-client';
+import { generateWalletWithPassword, importFromPrivateKeyWithPassword, toChecksumAddress } from '@/lib/web3-client';
 import { walletApi } from '@/lib/api';
 import { CreateWalletDialog } from '@/components/wallet/CreateWalletDialog';
 import Link from 'next/link';
@@ -64,7 +64,7 @@ export default function SettingsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   // 使用 useSignedUrl 获取头像 URL（自动刷新）
   const { url: avatarUrl, loading: avatarLoading } = useSignedUrl(user?.avatarKey);
-  const [walletAddress, setWalletAddress] = useState(user?.web3Address || '');
+  const [walletAddress, setWalletAddress] = useState('');
   const [walletBalance, setWalletBalance] = useState('0');
   const [coinBalance, setCoinBalance] = useState('0');
   const [chainInfo, setChainInfo] = useState<{chainName?: string; chainId?: string}>({});
@@ -251,6 +251,44 @@ ${result.mnemonic}
       loadWalletInfo(walletAddress);
     }
   }, [walletAddress]);
+
+  // 页面加载时从服务器刷新用户数据，确保 web3Address 是最新的
+  useEffect(() => {
+    const refreshUserData = async () => {
+      // 需要 sessionToken 才能访问 Parse /users/{userId}
+      if (user?.objectId && user?.sessionToken) {
+        try {
+          const result = await getUserById(user.objectId, user.sessionToken);
+          if (result.success && result.user) {
+            // 检查服务器上的 web3Address 是否与本地不同
+            const serverWeb3Address = result.user.web3Address;
+            if (serverWeb3Address && serverWeb3Address !== user.web3Address) {
+              // 更新本地 store
+              setUser({ ...user, web3Address: serverWeb3Address });
+            }
+          }
+        } catch (error) {
+          console.error('[设置页面] 刷新用户数据失败:', error);
+        }
+      }
+    };
+    refreshUserData();
+  }, [user?.objectId]); // 只在 objectId 变化时刷新（页面加载时）
+
+  // 初始化钱包地址（转换为 checksum 格式）
+  useEffect(() => {
+    const initWalletAddress = async () => {
+      // 确保 user 对象存在且有 web3Address
+      if (user && user.web3Address) {
+        const checksumAddr = await toChecksumAddress(user.web3Address);
+        setWalletAddress(checksumAddr);
+      } else if (user && !user.web3Address) {
+        // 用户已登录但没有钱包地址
+        setWalletAddress('');
+      }
+    };
+    initWalletAddress();
+  }, [user]); // 依赖整个 user 对象，而不是 user?.web3Address
 
   const profileForm = useForm<ProfileFormData>({
     resolver: zodResolver(profileSchema),

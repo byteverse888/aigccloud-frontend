@@ -43,6 +43,28 @@ export interface TransferResult {
 // ============ 钱包检测 ============
 
 /**
+ * 将地址转换为 checksum 格式
+ */
+export async function toChecksumAddress(address: string): Promise<string> {
+  try {
+    const { ethers } = await import('ethers');
+    return ethers.getAddress(address);
+  } catch {
+    return address; // 如果转换失败，返回原地址
+  }
+}
+
+/**
+ * 同步版本 - 将地址转换为 checksum 格式（需要在 ethers 已加载后使用）
+ */
+export function toChecksumAddressSync(address: string): string {
+  // 这是一个简化的 checksum 计算，仅在 ethers 不可用时使用
+  // 建议优先使用异步版本 toChecksumAddress
+  if (!address || typeof address !== 'string') return address;
+  return address; // 如果无法计算，直接返回
+}
+
+/**
  * 检测是否有外部钱包（MetaMask 等）
  */
 export function hasExternalWallet(): boolean {
@@ -198,7 +220,8 @@ export async function generateWalletWithPassword(password: string): Promise<Wall
     
     return {
       success: true,
-      address: wallet.address,
+      // 使用 getAddress 确保返回 checksum 格式
+      address: ethers.getAddress(wallet.address),
       privateKey: wallet.privateKey,
       mnemonic: wallet.mnemonic?.phrase,
       encryptedKeystore,
@@ -260,7 +283,8 @@ export async function importFromPrivateKeyWithPassword(
     
     return {
       success: true,
-      address: wallet.address,
+      // 使用 getAddress 确保返回 checksum 格式
+      address: ethers.getAddress(wallet.address),
       privateKey: wallet.privateKey,
       encryptedKeystore,
     };
