@@ -1,113 +1,150 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { useState, useEffect, useMemo } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useAuthStore } from '@/store';
-import { Crown, Star, Gift, Calendar, Coins, History, CheckCircle, Clock, XCircle } from 'lucide-react';
+import { memberApi } from '@/lib/api';
+import { Crown, History, CheckCircle, Clock, XCircle, Check, X, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+// 套餐信息类型
+interface PlanInfo {
+  plan_id: string;
+  name: string;
+  level: string;
+  days: number;
+  price: number;
+  original_price: number;
+  discount: number;
+  bonus: number;
+}
 
-// 会员套餐配置
-const MEMBER_PLANS = {
-  vip_month: { level: 'vip', days: 30, price: 29, bonus: 100, name: 'VIP月度会员' },
-  vip_half: { level: 'vip', days: 180, price: 148, bonus: 800, name: 'VIP半年会员' },
-  vip_year: { level: 'vip', days: 365, price: 268, bonus: 2000, name: 'VIP年度会员' },
-  vip_3year: { level: 'vip', days: 1095, price: 688, bonus: 8000, name: 'VIP三年会员' },
-  svip_month: { level: 'svip', days: 30, price: 59, bonus: 300, name: 'SVIP月度会员' },
-  svip_half: { level: 'svip', days: 180, price: 298, bonus: 2000, name: 'SVIP半年会员' },
-  svip_year: { level: 'svip', days: 365, price: 498, bonus: 5000, name: 'SVIP年度会员' },
-  svip_3year: { level: 'svip', days: 1095, price: 1288, bonus: 20000, name: 'SVIP三年会员' },
-};
+// 订单信息类型
+interface OrderInfo {
+  orderId: string;
+  planId: string;
+  planName: string;
+  level: string;
+  days: number;
+  amount: number;
+  bonus: number;
+  status: string;
+  createdAt: string;
+  paidAt?: string;
+}
 
-// VIP权益
-const VIP_BENEFITS = [
-  { icon: Crown, title: '专属徽章', desc: 'VIP专属身份标识' },
-  { icon: Gift, title: '每日登录双倍金币', desc: '每日登录奖励翻倍' },
-  { icon: Coins, title: '订阅赠送金币', desc: '订阅即送大量金币' },
-  { icon: Calendar, title: 'AI任务免费', desc: 'AI创作任务零消耗' },
+// 时长选项配置
+const DURATION_OPTIONS = [
+  { key: 'month', label: '1个月', days: 30, discount: null },
+  { key: 'half', label: '半年', days: 180, discount: '9折' },
+  { key: 'year', label: '1年', days: 365, discount: '8.5折' },
+  { key: '3year', label: '3年', days: 1095, discount: '8折' },
+  { key: '5year', label: '5年', days: 1825, discount: '7.5折' },
 ];
 
-// SVIP权益
-const SVIP_BENEFITS = [
-  ...VIP_BENEFITS,
-  { icon: Star, title: '优先处理', desc: 'AI任务优先队列' },
-  { icon: Crown, title: 'SVIP专属徽章', desc: '尊贵SVIP标识' },
+// 权益对比配置
+const BENEFITS = [
+  { name: 'AI对话次数', normal: '100次/天', vip: '1000次/天', svip: '无限制', isVipHighlight: true, isSvipHighlight: true },
+  { name: 'AI绘图次数', normal: '10次/天', vip: '100次/天', svip: '500次/天', isVipHighlight: true, isSvipHighlight: true },
+  { name: '高级模型访问', normal: false, vip: true, svip: true },
+  { name: '优先响应', normal: false, vip: true, svip: true },
+  { name: '专属客服', normal: false, vip: false, svip: true },
+  { name: 'API调用', normal: false, vip: true, svip: true },
+  { name: '商业授权', normal: false, vip: false, svip: true },
+  { name: '积分奖励', normal: '1x', vip: '2x', svip: '5x', isVipHighlight: true, isSvipHighlight: true },
 ];
 
 export default function MembershipPage() {
   const { user, setUser } = useAuthStore();
-  const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState('subscribe');
+  const [memberLevel, setMemberLevel] = useState<'vip' | 'svip'>('vip');
+  const [selectedDuration, setSelectedDuration] = useState('month');
+  const [plans, setPlans] = useState<PlanInfo[]>([]);
+  const [orders, setOrders] = useState<OrderInfo[]>([]);
   const [loading, setLoading] = useState(false);
+  const [plansLoading, setPlansLoading] = useState(true);
+  const [ordersLoading, setOrdersLoading] = useState(false);
   const [payDialog, setPayDialog] = useState(false);
   const [payInfo, setPayInfo] = useState<{ orderId: string; codeUrl?: string; testMode?: boolean } | null>(null);
-  const [memberOrders, setMemberOrders] = useState<Array<{
-    orderId: string;
-    planName: string;
-    amount: number;
-    status: string;
-    createdAt: string;
-    paidAt?: string;
-  }>>([]);
-  const [ordersLoading, setOrdersLoading] = useState(false);
 
-  const memberLevel = user?.memberLevel || 'normal';
-  const memberExpireAt = user?.memberExpireAt ? new Date(user.memberExpireAt) : null;
-  const isExpired = memberExpireAt ? memberExpireAt < new Date() : true;
-
-  // 加载会员订阅记录
+  // 加载套餐列表
   useEffect(() => {
-    async function loadMemberOrders() {
+    async function loadPlans() {
+      try {
+        const result = await memberApi.getPlans();
+        setPlans(result);
+      } catch (error) {
+        console.error('加载套餐失败:', error);
+        toast.error('加载套餐失败');
+      } finally {
+        setPlansLoading(false);
+      }
+    }
+    loadPlans();
+  }, []);
+
+  // 加载订阅记录
+  useEffect(() => {
+    async function loadOrders() {
       if (!user?.objectId || !user?.sessionToken) return;
       setOrdersLoading(true);
       try {
-        const response = await fetch(`${API_URL}/api/v1/member/orders/${user.objectId}`, {
-          headers: {
-            'X-Parse-Session-Token': user.sessionToken,
-          },
-        });
-        const result = await response.json();
-        if (result.orders) {
-          setMemberOrders(result.orders);
-        }
+        const result = await memberApi.getOrders(user.objectId, user.sessionToken);
+        setOrders(result.orders || []);
       } catch (error) {
-        console.error('加载会员订单失败:', error);
+        console.error('加载订阅记录失败:', error);
       } finally {
         setOrdersLoading(false);
       }
     }
-    loadMemberOrders();
-  }, [user?.objectId, user?.sessionToken]);
+    if (activeTab === 'orders') {
+      loadOrders();
+    }
+  }, [user?.objectId, user?.sessionToken, activeTab]);
 
-  const handleSubscribe = async (planId: string) => {
+  // 获取当前选中的套餐
+  const selectedPlan = useMemo(() => {
+    const planId = `${memberLevel}_${selectedDuration}`;
+    return plans.find(p => p.plan_id === planId);
+  }, [plans, memberLevel, selectedDuration]);
+
+  // 获取特定等级和时长的套餐
+  const getPlanByLevelAndDuration = (level: string, duration: string) => {
+    const planId = `${level}_${duration}`;
+    return plans.find(p => p.plan_id === planId);
+  };
+
+  // 计算每月价格
+  const getMonthlyPrice = (price: number, days: number) => {
+    return (price / (days / 30)).toFixed(1);
+  };
+
+  // 订阅处理
+  const handleSubscribe = async () => {
     if (!user) {
       toast.error('请先登录');
       return;
     }
+    if (!selectedPlan) {
+      toast.error('请选择套餐');
+      return;
+    }
 
-    setSelectedPlan(planId);
     setLoading(true);
-
     try {
-      const response = await fetch(`${API_URL}/api/v1/member/subscribe`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          user_id: user.objectId, 
-          plan_id: planId,
-          session_token: user.sessionToken,  // 传递 session token 用于更新用户信息
-        }),
+      const result = await memberApi.subscribe({
+        user_id: user.objectId,
+        plan_id: selectedPlan.plan_id,
+        session_token: user.sessionToken,
       });
-
-      const result = await response.json();
 
       if (result.success) {
         setPayInfo({
-          orderId: result.order_id,
+          orderId: result.order_id || '',
           codeUrl: result.pay_params?.code_url,
           testMode: result.pay_params?.test_mode,
         });
@@ -115,52 +152,37 @@ export default function MembershipPage() {
       } else {
         toast.error(result.message || '创建订单失败');
       }
-    } catch {
+    } catch (error) {
       toast.error('网络错误');
     } finally {
       setLoading(false);
     }
   };
 
-  // 测试模式：模拟支付
+  // 模拟支付
   const handleSimulatePay = async () => {
     if (!payInfo?.orderId || !user?.sessionToken) return;
 
     setLoading(true);
     try {
-      const response = await fetch(`${API_URL}/api/v1/member/simulate-pay`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          order_id: payInfo.orderId,
-          session_token: user.sessionToken,  // 传递 session token 用于更新用户信息
-        }),
+      const result = await memberApi.simulatePay({
+        order_id: payInfo.orderId,
+        session_token: user.sessionToken,
       });
-
-      const result = await response.json();
 
       if (result.success) {
         toast.success(result.message || '支付成功！');
         setPayDialog(false);
         // 更新用户信息
-        const plan = MEMBER_PLANS[selectedPlan as keyof typeof MEMBER_PLANS];
-        if (plan && user) {
+        if (selectedPlan && user) {
           setUser({
             ...user,
-            memberLevel: plan.level as 'normal' | 'vip' | 'svip',
-            memberExpireAt: new Date(Date.now() + plan.days * 24 * 60 * 60 * 1000),
+            memberLevel: selectedPlan.level as 'normal' | 'vip' | 'svip',
+            memberExpireAt: new Date(Date.now() + selectedPlan.days * 24 * 60 * 60 * 1000),
           });
         }
-        // 刷新订阅记录
-        const ordersResponse = await fetch(`${API_URL}/api/v1/member/orders/${user?.objectId}`, {
-          headers: {
-            'X-Parse-Session-Token': user?.sessionToken || '',
-          },
-        });
-        const ordersResult = await ordersResponse.json();
-        if (ordersResult.orders) {
-          setMemberOrders(ordersResult.orders);
-        }
+        // 切换到订单记录tab
+        setActiveTab('orders');
       } else {
         toast.error(result.message || '支付失败');
       }
@@ -171,208 +193,322 @@ export default function MembershipPage() {
     }
   };
 
-  return (
-    <div className="container py-8 space-y-8">
-      {/* 当前会员状态 */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Crown className="h-5 w-5 text-yellow-500" />
-            会员中心
-          </CardTitle>
-          <CardDescription>升级会员，享受更多权益</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center gap-4">
-            <div className="flex-1">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-lg font-medium">当前等级：</span>
-                <Badge variant={memberLevel === 'normal' ? 'outline' : 'default'}>
-                  {memberLevel === 'normal' ? '普通用户' : memberLevel.toUpperCase()}
-                </Badge>
-              </div>
-              {memberLevel !== 'normal' && memberExpireAt && (
-                <p className="text-sm text-muted-foreground">
-                  {isExpired ? '会员已过期' : `会员有效期至：${memberExpireAt.toLocaleDateString()}`}
-                </p>
-              )}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+  // 获取订单状态Badge
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'paid':
+        return (
+          <Badge variant="default" className="bg-green-500">
+            <CheckCircle className="h-3 w-3 mr-1" />
+            已支付
+          </Badge>
+        );
+      case 'pending':
+        return (
+          <Badge variant="secondary">
+            <Clock className="h-3 w-3 mr-1" />
+            待支付
+          </Badge>
+        );
+      case 'failed':
+        return (
+          <Badge variant="destructive">
+            <XCircle className="h-3 w-3 mr-1" />
+            失败
+          </Badge>
+        );
+      default:
+        return <Badge variant="outline">{status}</Badge>;
+    }
+  };
 
-      {/* 套餐选择 */}
-      <Tabs defaultValue="vip" className="w-full">
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="vip" className="flex items-center gap-2">
+  return (
+    <div className="container py-8 max-w-6xl">
+      {/* 页面头部 */}
+      <div className="flex items-center gap-3 mb-6">
+        <Crown className="h-8 w-8 text-yellow-500" />
+        <div>
+          <h1 className="text-2xl font-bold">会员订阅</h1>
+          <p className="text-muted-foreground text-sm">开通会员，享受更多权益</p>
+        </div>
+      </div>
+
+      {/* 主Tab */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="mb-6">
+          <TabsTrigger value="subscribe" className="flex items-center gap-2">
             <Crown className="h-4 w-4" />
-            VIP会员
+            订阅会员
           </TabsTrigger>
-          <TabsTrigger value="svip" className="flex items-center gap-2">
-            <Star className="h-4 w-4" />
-            SVIP会员
+          <TabsTrigger value="orders" className="flex items-center gap-2">
+            <History className="h-4 w-4" />
+            订单记录
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="vip" className="mt-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {(['vip_month', 'vip_half', 'vip_year', 'vip_3year'] as const).map((planId) => {
-              const plan = MEMBER_PLANS[planId];
-              return (
-                <Card key={planId} className={`relative ${selectedPlan === planId ? 'ring-2 ring-primary' : ''}`}>
-                  {planId === 'vip_year' && (
-                    <Badge className="absolute -top-2 -right-2 bg-red-500">推荐</Badge>
-                  )}
-                  <CardHeader>
-                    <CardTitle className="text-lg">{plan.name}</CardTitle>
-                    <CardDescription>{plan.days}天</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-3xl font-bold text-primary">¥{plan.price}</div>
-                    <p className="text-sm text-muted-foreground mt-2">
-                      赠送 <span className="text-yellow-500 font-medium">{plan.bonus}</span> 金币
-                    </p>
-                  </CardContent>
-                  <CardFooter>
-                    <Button 
-                      className="w-full" 
-                      onClick={() => handleSubscribe(planId)}
-                      disabled={loading}
+        {/* 订阅会员 Tab */}
+        <TabsContent value="subscribe">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* 左侧：套餐选择 */}
+            <div className="lg:col-span-2 space-y-6">
+              {/* VIP/SVIP 选择 */}
+              <Card className="border-border">
+                <CardContent className="p-0">
+                  <div className="grid grid-cols-2">
+                    <button
+                      onClick={() => setMemberLevel('vip')}
+                      className={`py-4 px-6 text-center transition-all border-b-2 ${
+                        memberLevel === 'vip'
+                          ? 'bg-yellow-500/10 border-yellow-500 text-yellow-500'
+                          : 'border-transparent hover:bg-muted/50'
+                      }`}
                     >
-                      立即开通
-                    </Button>
-                  </CardFooter>
-                </Card>
-              );
-            })}
-          </div>
-
-          {/* VIP权益 */}
-          <Card className="mt-6">
-            <CardHeader>
-              <CardTitle>VIP专属权益</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {VIP_BENEFITS.map((benefit, index) => (
-                  <div key={index} className="flex flex-col items-center text-center p-4">
-                    <benefit.icon className="h-8 w-8 text-primary mb-2" />
-                    <h4 className="font-medium">{benefit.title}</h4>
-                    <p className="text-sm text-muted-foreground">{benefit.desc}</p>
+                      <div className="text-lg font-bold">VIP</div>
+                      <div className="text-sm text-muted-foreground">基础会员</div>
+                    </button>
+                    <button
+                      onClick={() => setMemberLevel('svip')}
+                      className={`py-4 px-6 text-center transition-all border-b-2 ${
+                        memberLevel === 'svip'
+                          ? 'bg-yellow-500/10 border-yellow-500 text-yellow-500'
+                          : 'border-transparent hover:bg-muted/50'
+                      }`}
+                    >
+                      <div className="text-lg font-bold">SVIP</div>
+                      <div className="text-sm text-muted-foreground">超级会员</div>
+                    </button>
                   </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+                </CardContent>
+              </Card>
+
+              {/* 时长选择 */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg">选择时长</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {plansLoading ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="h-6 w-6 animate-spin" />
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                      {DURATION_OPTIONS.map((option) => {
+                        const plan = getPlanByLevelAndDuration(memberLevel, option.key);
+                        if (!plan) return null;
+                        const isSelected = selectedDuration === option.key;
+                        const monthlyPrice = getMonthlyPrice(plan.price, plan.days);
+
+                        return (
+                          <button
+                            key={option.key}
+                            onClick={() => setSelectedDuration(option.key)}
+                            className={`relative p-4 rounded-lg border-2 transition-all text-center ${
+                              isSelected
+                                ? 'border-yellow-500 bg-yellow-500/5'
+                                : 'border-border hover:border-yellow-500/50'
+                            }`}
+                          >
+                            {option.discount && (
+                              <Badge className="absolute -top-2 -right-2 bg-red-500 text-xs">
+                                {option.discount}
+                              </Badge>
+                            )}
+                            <div className="text-sm font-medium mb-2">{option.label}</div>
+                            <div className="text-xl font-bold text-yellow-500">
+                              ¥{plan.price.toFixed(2)}
+                            </div>
+                            {plan.original_price > plan.price && (
+                              <div className="text-xs text-muted-foreground line-through">
+                                ¥{plan.original_price.toFixed(2)}
+                              </div>
+                            )}
+                            {option.key !== 'month' && (
+                              <div className="text-xs text-muted-foreground mt-1">
+                                约¥{monthlyPrice}/月
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* 权益对比 */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg">权益对比</CardTitle>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b">
+                          <th className="text-left py-3 px-4 text-muted-foreground font-normal">权益</th>
+                          <th className="text-center py-3 px-4 text-muted-foreground font-normal">普通用户</th>
+                          <th className="text-center py-3 px-4 text-yellow-500 font-normal">VIP</th>
+                          <th className="text-center py-3 px-4 text-orange-500 font-normal">SVIP</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {BENEFITS.map((benefit, index) => (
+                          <tr key={index} className="border-b last:border-0">
+                            <td className="py-4 px-4 text-sm">{benefit.name}</td>
+                            <td className="py-4 px-4 text-center">
+                              {typeof benefit.normal === 'boolean' ? (
+                                benefit.normal ? (
+                                  <Check className="h-5 w-5 text-green-500 mx-auto" />
+                                ) : (
+                                  <X className="h-5 w-5 text-muted-foreground mx-auto" />
+                                )
+                              ) : (
+                                <span className="text-sm text-muted-foreground">{benefit.normal}</span>
+                              )}
+                            </td>
+                            <td className="py-4 px-4 text-center">
+                              {typeof benefit.vip === 'boolean' ? (
+                                benefit.vip ? (
+                                  <Check className="h-5 w-5 text-green-500 mx-auto" />
+                                ) : (
+                                  <X className="h-5 w-5 text-muted-foreground mx-auto" />
+                                )
+                              ) : (
+                                <span className={`text-sm ${benefit.isVipHighlight ? 'text-yellow-500 font-medium' : ''}`}>
+                                  {benefit.vip}
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-4 px-4 text-center">
+                              {typeof benefit.svip === 'boolean' ? (
+                                benefit.svip ? (
+                                  <Check className="h-5 w-5 text-green-500 mx-auto" />
+                                ) : (
+                                  <X className="h-5 w-5 text-muted-foreground mx-auto" />
+                                )
+                              ) : (
+                                <span className={`text-sm ${benefit.isSvipHighlight ? 'text-orange-500 font-medium' : ''}`}>
+                                  {benefit.svip}
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* 右侧：订单信息 */}
+            <div className="lg:col-span-1">
+              <Card className="sticky top-6">
+                <CardHeader>
+                  <CardTitle>订单信息</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {selectedPlan ? (
+                    <>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">套餐</span>
+                        <span>{selectedPlan.name}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">时长</span>
+                        <span>
+                          {selectedPlan.days >= 365
+                            ? `${Math.floor(selectedPlan.days / 365)}年`
+                            : selectedPlan.days >= 30
+                            ? `${Math.floor(selectedPlan.days / 30)}个月`
+                            : `${selectedPlan.days}天`}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">赠送积分</span>
+                        <span className="text-green-500">+{selectedPlan.bonus}</span>
+                      </div>
+                      <div className="border-t pt-4">
+                        <div className="flex justify-between items-center">
+                          <span className="text-muted-foreground">实付价</span>
+                          <span className="text-3xl font-bold text-yellow-500">
+                            ¥{selectedPlan.price.toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+                      <Button
+                        className="w-full bg-yellow-500 hover:bg-yellow-600 text-black font-medium h-12 text-lg"
+                        onClick={handleSubscribe}
+                        disabled={loading}
+                      >
+                        {loading ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            处理中...
+                          </>
+                        ) : (
+                          '立即开通'
+                        )}
+                      </Button>
+                    </>
+                  ) : (
+                    <div className="text-center text-muted-foreground py-4">
+                      请选择套餐
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </div>
         </TabsContent>
 
-        <TabsContent value="svip" className="mt-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {(['svip_month', 'svip_half', 'svip_year', 'svip_3year'] as const).map((planId) => {
-              const plan = MEMBER_PLANS[planId];
-              return (
-                <Card key={planId} className={`relative ${selectedPlan === planId ? 'ring-2 ring-primary' : ''}`}>
-                  {planId === 'svip_year' && (
-                    <Badge className="absolute -top-2 -right-2 bg-red-500">推荐</Badge>
-                  )}
-                  <CardHeader>
-                    <CardTitle className="text-lg">{plan.name}</CardTitle>
-                    <CardDescription>{plan.days}天</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-3xl font-bold text-primary">¥{plan.price}</div>
-                    <p className="text-sm text-muted-foreground mt-2">
-                      赠送 <span className="text-yellow-500 font-medium">{plan.bonus}</span> 金币
-                    </p>
-                  </CardContent>
-                  <CardFooter>
-                    <Button 
-                      className="w-full" 
-                      onClick={() => handleSubscribe(planId)}
-                      disabled={loading}
-                    >
-                      立即开通
-                    </Button>
-                  </CardFooter>
-                </Card>
-              );
-            })}
-          </div>
-
-          {/* SVIP权益 */}
-          <Card className="mt-6">
+        {/* 订单记录 Tab */}
+        <TabsContent value="orders">
+          <Card>
             <CardHeader>
-              <CardTitle>SVIP尊享权益</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                <History className="h-5 w-5" />
+                订阅记录
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                {SVIP_BENEFITS.map((benefit, index) => (
-                  <div key={index} className="flex flex-col items-center text-center p-4">
-                    <benefit.icon className="h-8 w-8 text-yellow-500 mb-2" />
-                    <h4 className="font-medium">{benefit.title}</h4>
-                    <p className="text-sm text-muted-foreground">{benefit.desc}</p>
-                  </div>
-                ))}
-              </div>
+              {ordersLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-6 w-6 animate-spin" />
+                </div>
+              ) : orders.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground">
+                  暂无订阅记录
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {orders.map((order) => (
+                    <div
+                      key={order.orderId}
+                      className="flex items-center justify-between p-4 border rounded-lg"
+                    >
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{order.planName}</span>
+                          {getStatusBadge(order.status)}
+                        </div>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          {new Date(order.createdAt).toLocaleString()}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-bold">¥{order.amount.toFixed(2)}</p>
+                        <p className="text-xs text-muted-foreground">{order.orderId}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
-
-      {/* 订阅历史记录 */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <History className="h-5 w-5" />
-            订阅记录
-          </CardTitle>
-          <CardDescription>您的会员订阅历史</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {ordersLoading ? (
-            <div className="text-center py-8 text-muted-foreground">加载中...</div>
-          ) : memberOrders.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">暂无订阅记录</div>
-          ) : (
-            <div className="space-y-3">
-              {memberOrders.map((order) => (
-                <div key={order.orderId} className="flex items-center justify-between p-4 border rounded-lg">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">{order.planName}</span>
-                      {order.status === 'paid' && (
-                        <Badge variant="default" className="bg-green-500">
-                          <CheckCircle className="h-3 w-3 mr-1" />
-                          已支付
-                        </Badge>
-                      )}
-                      {order.status === 'pending' && (
-                        <Badge variant="secondary">
-                          <Clock className="h-3 w-3 mr-1" />
-                          待支付
-                        </Badge>
-                      )}
-                      {order.status === 'failed' && (
-                        <Badge variant="destructive">
-                          <XCircle className="h-3 w-3 mr-1" />
-                          失败
-                        </Badge>
-                      )}
-                    </div>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      {new Date(order.createdAt).toLocaleString()}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-bold">¥{order.amount}</p>
-                    <p className="text-xs text-muted-foreground">{order.orderId}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
 
       {/* 支付对话框 */}
       <Dialog open={payDialog} onOpenChange={setPayDialog}>
@@ -394,9 +530,8 @@ export default function MembershipPage() {
             ) : (
               <div className="text-center">
                 {payInfo?.codeUrl ? (
-                  <div className="p-4 bg-gray-100 rounded-lg">
+                  <div className="p-4 bg-muted rounded-lg">
                     <p className="text-sm mb-2">微信扫码支付</p>
-                    {/* 这里可以用 qrcode 库生成二维码 */}
                     <p className="text-xs text-muted-foreground break-all">{payInfo.codeUrl}</p>
                   </div>
                 ) : (

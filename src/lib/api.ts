@@ -269,6 +269,84 @@ export const promotionApi = {
     fetchApi(`/api/v1/promotion/stats/${userId}`),
 };
 
+// Member API
+export const memberApi = {
+  // 获取会员套餐列表
+  getPlans: () =>
+    fetchApi<Array<{
+      plan_id: string;
+      name: string;
+      level: string;
+      days: number;
+      price: number;
+      original_price: number;
+      discount: number;
+      bonus: number;
+    }>>('/api/v1/member/plans'),
+
+  // 创建订阅订单
+  subscribe: (data: {
+    user_id: string;
+    plan_id: string;
+    openid?: string;
+    session_token?: string;
+  }) =>
+    fetchApi<{
+      success: boolean;
+      order_id?: string;
+      pay_params?: {
+        prepay_id?: string;
+        code_url?: string;
+        test_mode?: boolean;
+      };
+      message?: string;
+    }>('/api/v1/member/subscribe', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  // 模拟支付（测试模式）
+  simulatePay: (data: { order_id: string; session_token?: string }) =>
+    fetchApi<{
+      success: boolean;
+      order_id?: string;
+      message?: string;
+    }>('/api/v1/member/simulate-pay', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  // 获取会员状态
+  getStatus: (userId: string, sessionToken: string) =>
+    fetchApi<{
+      member_level: string;
+      member_expire_at?: string;
+      is_expired: boolean;
+    }>(`/api/v1/member/status/${userId}`, {
+      headers: { 'X-Parse-Session-Token': sessionToken },
+    }),
+
+  // 获取订阅记录
+  getOrders: (userId: string, sessionToken: string, limit = 20, skip = 0) =>
+    fetchApi<{
+      orders: Array<{
+        orderId: string;
+        planId: string;
+        planName: string;
+        level: string;
+        days: number;
+        amount: number;
+        bonus: number;
+        status: string;
+        createdAt: string;
+        paidAt?: string;
+      }>;
+      total: number;
+    }>(`/api/v1/member/orders/${userId}?limit=${limit}&skip=${skip}`, {
+      headers: { 'X-Parse-Session-Token': sessionToken },
+    }),
+};
+
 // Wallet API
 export const walletApi = {
   // 创建钱包（将加密后的 keystore 保存到服务器）
@@ -336,5 +414,6 @@ export default {
   task: taskApi,
   incentive: incentiveApi,
   promotion: promotionApi,
+  member: memberApi,
   wallet: walletApi,
 };
