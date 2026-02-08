@@ -32,7 +32,7 @@ interface User {
   role: string;
   level: number;
   memberLevel: 'normal' | 'vip' | 'svip';
-  memberExpireAt?: Date;
+  memberExpireAt?: string | Date;
   web3Address?: string;
   inviteCount: number;
   successRegCount: number;

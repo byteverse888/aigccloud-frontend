@@ -70,6 +70,33 @@ export default function MembershipPage() {
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [payDialog, setPayDialog] = useState(false);
   const [payInfo, setPayInfo] = useState<{ orderId: string; codeUrl?: string; testMode?: boolean } | null>(null);
+  
+  // 会员状态（从后端获取）
+  const [memberStatus, setMemberStatus] = useState<{
+    member_level: string;
+    member_expire_at?: string;
+    is_expired: boolean;
+  } | null>(null);
+
+  // 从后端刷新会员状态
+  const refreshMemberStatus = async () => {
+    if (!user?.objectId || !user?.sessionToken) return;
+    try {
+      const status = await memberApi.getStatus(user.objectId, user.sessionToken);
+      setMemberStatus(status);
+      // 同步更新 user store 中的 memberLevel
+      if (status.member_level !== user.memberLevel) {
+        setUser({ ...user, memberLevel: status.member_level as 'normal' | 'vip' | 'svip' });
+      }
+    } catch (error) {
+      console.error('获取会员状态失败:', error);
+    }
+  };
+
+  // 页面加载时获取会员状态
+  useEffect(() => {
+    refreshMemberStatus();
+  }, [user?.objectId, user?.sessionToken]);
 
   // 加载套餐列表
   useEffect(() => {
@@ -173,14 +200,10 @@ export default function MembershipPage() {
       if (result.success) {
         toast.success(result.message || '支付成功！');
         setPayDialog(false);
-        // 更新用户信息
-        if (selectedPlan && user) {
-          setUser({
-            ...user,
-            memberLevel: selectedPlan.level as 'normal' | 'vip' | 'svip',
-            memberExpireAt: new Date(Date.now() + selectedPlan.days * 24 * 60 * 60 * 1000),
-          });
-        }
+        
+        // 从服务器获取最新的用户会员状态
+        await refreshMemberStatus();
+        
         // 切换到订单记录tab
         setActiveTab('orders');
       } else {
@@ -223,12 +246,30 @@ export default function MembershipPage() {
   };
 
   return (
-    <div className="container py-8 max-w-6xl">
+    <div className="pt-0 pb-4 px-2 md:px-4 max-w-6xl">
       {/* 页面头部 */}
       <div className="flex items-center gap-3 mb-6">
         <Crown className="h-8 w-8 text-yellow-500" />
         <div>
-          <h1 className="text-2xl font-bold">会员订阅</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold">会员订阅</h1>
+            {memberStatus && memberStatus.member_level !== 'normal' && !memberStatus.is_expired && (
+              <Badge 
+                className={`${
+                  memberStatus.member_level === 'svip' 
+                    ? 'bg-orange-500 hover:bg-orange-600' 
+                    : 'bg-yellow-500 hover:bg-yellow-600'
+                } text-black font-medium`}
+              >
+                {memberStatus.member_level.toUpperCase()}
+                {memberStatus.member_expire_at && (
+                  <span className="ml-1">
+                    至 {new Date(memberStatus.member_expire_at).toISOString().split('T')[0]}
+                  </span>
+                )}
+              </Badge>
+            )}
+          </div>
           <p className="text-muted-foreground text-sm">开通会员，享受更多权益</p>
         </div>
       </div>

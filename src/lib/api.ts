@@ -167,6 +167,7 @@ export const authApi = {
         role: string;
         level: number;
         memberLevel: 'normal' | 'vip' | 'svip';
+        memberExpireAt?: string;
         coins: number;
         avatar?: string;
         avatarKey?: string;

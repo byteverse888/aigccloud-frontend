@@ -95,6 +95,7 @@ function LoginContent() {
       role: user.role || 'user',
       level: user.level || 1,
       memberLevel: user.memberLevel || 'normal',
+      memberExpireAt: user.memberExpireAt,
       inviteCount: user.inviteCount || 0,
       successRegCount: user.successRegCount || 0,
       totalIncentive: user.totalIncentive || 0,
