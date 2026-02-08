@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -10,6 +10,8 @@ import { useAuthStore } from '@/store';
 import { memberApi } from '@/lib/api';
 import { Crown, History, CheckCircle, Clock, XCircle, Check, X, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
+// QR Code library - install: npm install qrcode.react
+// import { QRCodeSVG } from 'qrcode.react';
 
 // 套餐信息类型
 interface PlanInfo {
@@ -215,6 +217,65 @@ export default function MembershipPage() {
       setLoading(false);
     }
   };
+
+  // 轮询检查支付状态（真实支付时使用）
+  const pollingRef = useRef<NodeJS.Timeout | null>(null);
+  const [paymentChecking, setPaymentChecking] = useState(false);
+
+  const startPaymentPolling = useCallback(() => {
+    if (!payInfo?.orderId || !user?.sessionToken || payInfo?.testMode) return;
+    
+    setPaymentChecking(true);
+    
+    // 每3秒检查一次支付状态，最多检查60次（3分钟）
+    let count = 0;
+    const maxCount = 60;
+    const sessionToken = user.sessionToken;
+    const orderId = payInfo.orderId;
+    
+    pollingRef.current = setInterval(async () => {
+      count++;
+      try {
+        // 调用后端查询订单状态 API
+        const result = await memberApi.checkOrderStatus(orderId, sessionToken);
+        
+        if (result.status === 'paid') {
+          // 支付成功
+          stopPaymentPolling();
+          toast.success('支付成功！');
+          setPayDialog(false);
+          await refreshMemberStatus();
+          setActiveTab('orders');
+        } else if (result.status === 'failed' || result.status === 'cancelled') {
+          // 支付失败或取消
+          stopPaymentPolling();
+          toast.error('支付失败或已取消');
+        } else if (count >= maxCount) {
+          // 超时
+          stopPaymentPolling();
+          toast.error('支付超时，请重新下单');
+        }
+      } catch (error) {
+        console.error('检查支付状态失败:', error);
+      }
+    }, 3000);
+  }, [payInfo, user?.sessionToken]);
+
+  const stopPaymentPolling = useCallback(() => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+    setPaymentChecking(false);
+  }, []);
+
+  // 支付对话框打开时开始轮询
+  useEffect(() => {
+    if (payDialog && payInfo && !payInfo.testMode) {
+      startPaymentPolling();
+    }
+    return () => stopPaymentPolling();
+  }, [payDialog, payInfo, startPaymentPolling, stopPaymentPolling]);
 
   // 获取订单状态Badge
   const getStatusBadge = (status: string) => {
@@ -552,7 +613,10 @@ export default function MembershipPage() {
       </Tabs>
 
       {/* 支付对话框 */}
-      <Dialog open={payDialog} onOpenChange={setPayDialog}>
+      <Dialog open={payDialog} onOpenChange={(open) => {
+        setPayDialog(open);
+        if (!open) stopPaymentPolling();
+      }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>完成支付</DialogTitle>
@@ -569,14 +633,35 @@ export default function MembershipPage() {
                 </Button>
               </div>
             ) : (
-              <div className="text-center">
+              <div className="text-center space-y-4">
                 {payInfo?.codeUrl ? (
-                  <div className="p-4 bg-muted rounded-lg">
-                    <p className="text-sm mb-2">微信扫码支付</p>
-                    <p className="text-xs text-muted-foreground break-all">{payInfo.codeUrl}</p>
-                  </div>
+                  <>
+                    {/* QR Code - 安装 qrcode.react 后取消下面注释 */}
+                    {/* <QRCodeSVG value={payInfo.codeUrl} size={200} /> */}
+                    
+                    {/* 临时显示：安装 qrcode.react 后删除这部分 */}
+                    <div className="w-48 h-48 bg-muted rounded-lg flex items-center justify-center border-2 border-dashed">
+                      <div className="text-center text-sm text-muted-foreground p-4">
+                        <p className="mb-2">二维码区域</p>
+                        <p className="text-xs">安装 qrcode.react 后显示</p>
+                      </div>
+                    </div>
+                    
+                    <p className="text-sm text-muted-foreground">请使用微信扫码支付</p>
+                    <p className="text-xs text-muted-foreground">订单号：{payInfo.orderId}</p>
+                    
+                    {paymentChecking && (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        正在等待支付结果...
+                      </div>
+                    )}
+                  </>
                 ) : (
-                  <p>正在生成支付码...</p>
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    正在生成支付码...
+                  </div>
                 )}
               </div>
             )}

@@ -346,6 +346,16 @@ export const memberApi = {
     }>(`/api/v1/member/orders/${userId}?limit=${limit}&skip=${skip}`, {
       headers: { 'X-Parse-Session-Token': sessionToken },
     }),
+
+  // 查询订单支付状态（轮询用）
+  checkOrderStatus: (orderId: string, sessionToken: string) =>
+    fetchApi<{
+      order_id: string;
+      status: 'pending' | 'paid' | 'failed' | 'cancelled';
+      paid_at?: string;
+    }>(`/api/v1/member/order-status/${orderId}`, {
+      headers: { 'X-Parse-Session-Token': sessionToken },
+    }),
 };
 
 // Wallet API
