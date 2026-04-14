@@ -313,9 +313,10 @@ export async function updateUserProfile(
   }
 }
 
-export async function getUserById(userId: string) {
+export async function getUserById(userId: string, sessionToken?: string) {
   try {
-    const result = await parseRequest(`/users/${userId}`, 'GET');
+    console.log('[getUserById] userId:', userId, 'sessionToken:', sessionToken ? sessionToken.substring(0, 20) + '...' : 'undefined');
+    const result = await parseRequest(`/users/${userId}`, 'GET', undefined, sessionToken);
     return { success: true, user: result };
   } catch (error) {
     return { success: false, error: (error as Error).message };

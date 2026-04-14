@@ -16,7 +16,9 @@ import {
   EyeOff,
   ArrowLeft,
   Upload,
-  Loader2
+  Loader2,
+  Unlink,
+  AlertTriangle
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -26,11 +28,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import { useAuthStore } from '@/store';
-import { updateUserProfile, changePassword } from '@/lib/parse-actions';
+import { updateUserProfile, changePassword, getUserById } from '@/lib/parse-actions';
 import { useFileUpload } from '@/hooks/useFileUpload';
 import { useSignedUrl } from '@/hooks/useSignedUrl';
 import { getWalletBalance, getCoinBalance, getChainInfo } from '@/lib/web3-actions';
-import { generateWallet, importWalletFromPrivateKey } from '@/lib/web3-client';
+import { generateWalletWithPassword, importFromPrivateKeyWithPassword, toChecksumAddress } from '@/lib/web3-client';
+import { walletApi } from '@/lib/api';
+import { CreateWalletDialog } from '@/components/wallet/CreateWalletDialog';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
 
@@ -62,12 +66,15 @@ export default function SettingsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   // 使用 useSignedUrl 获取头像 URL（自动刷新）
   const { url: avatarUrl, loading: avatarLoading } = useSignedUrl(user?.avatarKey);
-  const [walletAddress, setWalletAddress] = useState(user?.web3Address || '');
+  const [walletAddress, setWalletAddress] = useState('');
   const [walletBalance, setWalletBalance] = useState('0');
   const [coinBalance, setCoinBalance] = useState('0');
   const [chainInfo, setChainInfo] = useState<{chainName?: string; chainId?: string}>({});
   const [isBindingWallet, setIsBindingWallet] = useState(false);
   const [showImportDialog, setShowImportDialog] = useState(false);
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [showUnbindConfirm, setShowUnbindConfirm] = useState(false);
+  const [isUnbinding, setIsUnbinding] = useState(false);
   const [privateKeyInput, setPrivateKeyInput] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -135,38 +142,54 @@ export default function SettingsPage() {
     }
   };
 
-  // 创建新钱包
-  const handleCreateWallet = async () => {
-    if (!user?.objectId || !user?.sessionToken) {
+  // 创建新钱包（显示密码对话框）
+  const handleCreateWallet = () => {
+    setShowCreateDialog(true);
+  };
+
+  // 确认创建钱包（使用密码加密）
+  const handleConfirmCreateWallet = async (password: string) => {
+    if (!user?.objectId) {
       toast.error('请先登录');
+      return;
+    }
+    
+    if (!user?.jwtToken) {
+      toast.error('登录信息已过期，请重新登录');
       return;
     }
     
     setIsBindingWallet(true);
     try {
-      const result = await generateWallet();
-      if (!result.success || !result.address) {
+      // 1. 生成钱包并加密
+      const result = await generateWalletWithPassword(password);
+      if (!result.success || !result.address || !result.encryptedKeystore) {
         throw new Error(result.error || '创建钱包失败');
       }
       
-      // 保存到Parse
-      const updateResult = await updateUserProfile(
-        user.objectId,
-        { web3Address: result.address },
-        user.sessionToken
+      // 2. 保存到后端（使用 JWT token 作为认证）
+      const saveResult = await walletApi.createWallet(
+        result.address,
+        result.encryptedKeystore,
+        user.jwtToken
       );
       
-      if (updateResult.success) {
+      if (saveResult.success) {
         setWalletAddress(result.address);
         setUser({ ...user, web3Address: result.address });
         await loadWalletInfo(result.address);
+        setShowCreateDialog(false);
         toast.success('钱包创建成功');
         
-        // 提示用户保存私钥
-        if (result.privateKey) {
-          toast(
-            `重要！请备份您的私钥\n${result.privateKey.slice(0, 20)}...`,
-            { duration: 10000 }
+        // 显示完整的助记词信息
+        if (result.mnemonic) {
+          // 使用 alert 显示完整助记词，确保用户看到并保存
+          alert(
+            `重要！请备份您的助记词（请勿截图或分享给他人）
+
+${result.mnemonic}
+
+请将以上12个单词安全保存，丢失后无法找回！`
           );
         }
       }
@@ -179,7 +202,7 @@ export default function SettingsPage() {
 
   // 导入钱包
   const handleImportWallet = async () => {
-    if (!user?.objectId || !user?.sessionToken) {
+    if (!user?.objectId || !user?.jwtToken) {
       toast.error('请先登录');
       return;
     }
@@ -188,22 +211,30 @@ export default function SettingsPage() {
       toast.error('请输入私钥');
       return;
     }
+
+    // 请求用户输入密码（为简化，此处直接使用 prompt，实际应用中应使用对话框）
+    const password = prompt('请设置钱包密码（用于加密存储）：');
+    if (!password || password.length < 6) {
+      toast.error('密码至少6位');
+      return;
+    }
     
     setIsBindingWallet(true);
     try {
-      const result = await importWalletFromPrivateKey(privateKeyInput.trim());
-      if (!result.success || !result.address) {
+      // 1. 导入并加密
+      const result = await importFromPrivateKeyWithPassword(privateKeyInput.trim(), password);
+      if (!result.success || !result.address || !result.encryptedKeystore) {
         throw new Error(result.error || '导入钱包失败');
       }
       
-      // 保存到Parse
-      const updateResult = await updateUserProfile(
-        user.objectId,
-        { web3Address: result.address },
-        user.sessionToken
+      // 2. 保存到后端（使用 JWT token）
+      const saveResult = await walletApi.importWallet(
+        result.address,
+        result.encryptedKeystore,
+        user.jwtToken
       );
       
-      if (updateResult.success) {
+      if (saveResult.success) {
         setWalletAddress(result.address);
         setUser({ ...user, web3Address: result.address });
         await loadWalletInfo(result.address);
@@ -218,12 +249,77 @@ export default function SettingsPage() {
     }
   };
 
+  // 解绑钱包
+  const handleUnbindWallet = async () => {
+    if (!user?.objectId || !user?.jwtToken) {
+      toast.error('请先登录');
+      return;
+    }
+    
+    setIsUnbinding(true);
+    try {
+      const result = await walletApi.unbindWallet(user.jwtToken);
+      
+      if (result.success) {
+        // 清除本地状态
+        setWalletAddress('');
+        setWalletBalance('0');
+        setCoinBalance('0');
+        setUser({ ...user, web3Address: undefined });
+        setShowUnbindConfirm(false);
+        toast.success('钱包解绑成功');
+      }
+    } catch (error) {
+      toast.error((error as Error).message || '解绑失败');
+    } finally {
+      setIsUnbinding(false);
+    }
+  };
+
   // 加载钱包信息
   useEffect(() => {
     if (walletAddress) {
       loadWalletInfo(walletAddress);
     }
   }, [walletAddress]);
+
+  // 页面加载时从服务器刷新用户数据，确保 web3Address 是最新的
+  useEffect(() => {
+    const refreshUserData = async () => {
+      // 需要 sessionToken 才能访问 Parse /users/{userId}
+      if (user?.objectId && user?.sessionToken) {
+        try {
+          const result = await getUserById(user.objectId, user.sessionToken);
+          if (result.success && result.user) {
+            // 检查服务器上的 web3Address 是否与本地不同
+            const serverWeb3Address = result.user.web3Address;
+            if (serverWeb3Address && serverWeb3Address !== user.web3Address) {
+              // 更新本地 store
+              setUser({ ...user, web3Address: serverWeb3Address });
+            }
+          }
+        } catch (error) {
+          console.error('[设置页面] 刷新用户数据失败:', error);
+        }
+      }
+    };
+    refreshUserData();
+  }, [user?.objectId]); // 只在 objectId 变化时刷新（页面加载时）
+
+  // 初始化钱包地址（转换为 checksum 格式）
+  useEffect(() => {
+    const initWalletAddress = async () => {
+      // 确保 user 对象存在且有 web3Address
+      if (user && user.web3Address) {
+        const checksumAddr = await toChecksumAddress(user.web3Address);
+        setWalletAddress(checksumAddr);
+      } else if (user && !user.web3Address) {
+        // 用户已登录但没有钱包地址
+        setWalletAddress('');
+      }
+    };
+    initWalletAddress();
+  }, [user]); // 依赖整个 user 对象，而不是 user?.web3Address
 
   const profileForm = useForm<ProfileFormData>({
     resolver: zodResolver(profileSchema),
@@ -330,6 +426,14 @@ export default function SettingsPage() {
           返回用户中心
         </Link>
       </Button>
+
+      {/* 创建钱包密码对话框 */}
+      <CreateWalletDialog
+        open={showCreateDialog}
+        onOpenChange={setShowCreateDialog}
+        onConfirm={handleConfirmCreateWallet}
+        isLoading={isBindingWallet}
+      />
 
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -577,6 +681,52 @@ export default function SettingsPage() {
                       >
                         刷新余额
                       </Button>
+                      
+                      {/* 解绑钱包按钮 */}
+                      {!showUnbindConfirm ? (
+                        <Button 
+                          variant="outline" 
+                          className="w-full text-destructive hover:text-destructive hover:bg-destructive/10"
+                          onClick={() => setShowUnbindConfirm(true)}
+                        >
+                          <Unlink className="h-4 w-4 mr-2" />
+                          解绑地址
+                        </Button>
+                      ) : (
+                        <div className="p-4 border border-destructive/50 rounded-lg bg-destructive/5 space-y-3">
+                          <div className="flex items-start gap-2">
+                            <AlertTriangle className="h-5 w-5 text-destructive mt-0.5" />
+                            <div>
+                              <p className="text-sm font-medium text-destructive">确认解绑钱包？</p>
+                              <p className="text-xs text-muted-foreground mt-1">
+                                解绑后钱包信息将被删除，无法找回。请确保已备份助记词或私钥。
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              className="flex-1"
+                              onClick={() => setShowUnbindConfirm(false)}
+                              disabled={isUnbinding}
+                            >
+                              取消
+                            </Button>
+                            <Button 
+                              variant="destructive" 
+                              size="sm"
+                              className="flex-1"
+                              onClick={handleUnbindWallet}
+                              disabled={isUnbinding}
+                            >
+                              {isUnbinding ? (
+                                <><Loader2 className="h-4 w-4 mr-2 animate-spin" />解绑中...</>
+                              ) : '确认解绑'}
+                            </Button>
+                          </div>
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
                 ) : (

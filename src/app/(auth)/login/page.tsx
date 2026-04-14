@@ -79,16 +79,23 @@ function LoginContent() {
   });
 
   // 通用的设置用户信息
-  const handleSetUser = (user: any, token?: string) => {
+  const handleSetUser = (user: any, jwtToken?: string) => {
+    // sessionToken: Parse session token（用于 Parse API）
+    // jwtToken: JWT（用于后端 API）
+    const parseSessionToken = user.sessionToken;
+    console.log('[Login] handleSetUser - JWT token:', jwtToken ? jwtToken.substring(0, 30) + '...' : 'undefined');
+    console.log('[Login] handleSetUser - Parse sessionToken:', parseSessionToken ? parseSessionToken.substring(0, 30) + '...' : 'undefined');
     setUser({
       objectId: user.objectId,
-      sessionToken: token || user.sessionToken,
+      sessionToken: parseSessionToken,  // Parse session token
+      jwtToken: jwtToken,               // JWT token for backend API
       username: user.username,
       email: user.email,
       phone: user.phone,
       role: user.role || 'user',
       level: user.level || 1,
       memberLevel: user.memberLevel || 'normal',
+      memberExpireAt: user.memberExpireAt,
       inviteCount: user.inviteCount || 0,
       successRegCount: user.successRegCount || 0,
       totalIncentive: user.totalIncentive || 0,
@@ -329,16 +336,20 @@ function LoginContent() {
         </CardHeader>
         <CardContent>
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-2">
+            <TabsList className="grid w-full grid-cols-1">
               <TabsTrigger value="password">
                 <Mail className="mr-2 h-4 w-4" />
-                账号登录
+                邮箱登录
               </TabsTrigger>
+              {/* 手机登录暂时隐藏 */}
+              {false && (
               <TabsTrigger value="phone">
                 <Smartphone className="mr-2 h-4 w-4" />
                 手机登录
               </TabsTrigger>
-              {/* Web3登录暂时隐藏，等待Electron客户端完成
+              )}
+              {/* Web3登录暂时隐藏，等待Electron客户端完成 */}
+              {/*
               <TabsTrigger value="web3">
                 <Wallet className="mr-2 h-4 w-4" />
                 WEB3登录
@@ -346,15 +357,15 @@ function LoginContent() {
               */}
             </TabsList>
 
-            {/* 账号密码登录 */}
+            {/* 邮箱登录 */}
             <TabsContent value="password" className="mt-4">
               <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="username">用户名 / 手机号 / 邮箱</Label>
+                  <Label htmlFor="username">邮箱</Label>
                   <Input
                     id="username"
-                    placeholder="请输入用户名/手机号/邮箱"
-                    autoComplete="username"
+                    placeholder="请输入邮箱"
+                    autoComplete="email"
                     {...register('username')}
                     disabled={isLoading}
                   />

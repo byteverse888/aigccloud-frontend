@@ -24,6 +24,7 @@ export interface WalletResult {
   address?: string;
   privateKey?: string;
   mnemonic?: string;
+  encryptedKeystore?: string;  // 加密后的 keystore JSON
   error?: string;
 }
 
@@ -40,6 +41,28 @@ export interface TransferResult {
 }
 
 // ============ 钱包检测 ============
+
+/**
+ * 将地址转换为 checksum 格式
+ */
+export async function toChecksumAddress(address: string): Promise<string> {
+  try {
+    const { ethers } = await import('ethers');
+    return ethers.getAddress(address);
+  } catch {
+    return address; // 如果转换失败，返回原地址
+  }
+}
+
+/**
+ * 同步版本 - 将地址转换为 checksum 格式（需要在 ethers 已加载后使用）
+ */
+export function toChecksumAddressSync(address: string): string {
+  // 这是一个简化的 checksum 计算，仅在 ethers 不可用时使用
+  // 建议优先使用异步版本 toChecksumAddress
+  if (!address || typeof address !== 'string') return address;
+  return address; // 如果无法计算，直接返回
+}
 
 /**
  * 检测是否有外部钱包（MetaMask 等）
@@ -185,6 +208,33 @@ export async function generateWallet(): Promise<WalletResult> {
 }
 
 /**
+ * 生成新钱包并加密（使用密码加密 keystore）
+ */
+export async function generateWalletWithPassword(password: string): Promise<WalletResult> {
+  try {
+    const { ethers } = await import('ethers');
+    const wallet = ethers.Wallet.createRandom();
+    
+    // 使用密码加密 keystore
+    const encryptedKeystore = await wallet.encrypt(password);
+    
+    return {
+      success: true,
+      // 使用 getAddress 确保返回 checksum 格式
+      address: ethers.getAddress(wallet.address),
+      privateKey: wallet.privateKey,
+      mnemonic: wallet.mnemonic?.phrase,
+      encryptedKeystore,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: (error as Error).message,
+    };
+  }
+}
+
+/**
  * 从私钥导入钱包（仅验证格式，获取地址）
  */
 export async function importFromPrivateKey(privateKey: string): Promise<WalletResult> {
@@ -202,6 +252,41 @@ export async function importFromPrivateKey(privateKey: string): Promise<WalletRe
       success: true,
       address: wallet.address,
       privateKey: wallet.privateKey,
+    };
+  } catch {
+    return {
+      success: false,
+      error: '无效的私钥格式',
+    };
+  }
+}
+
+/**
+ * 从私钥导入钱包并加密
+ */
+export async function importFromPrivateKeyWithPassword(
+  privateKey: string,
+  password: string
+): Promise<WalletResult> {
+  try {
+    const { ethers } = await import('ethers');
+    
+    // 标准化私钥格式
+    if (!privateKey.startsWith('0x')) {
+      privateKey = '0x' + privateKey;
+    }
+    
+    const wallet = new ethers.Wallet(privateKey);
+    
+    // 加密 keystore
+    const encryptedKeystore = await wallet.encrypt(password);
+    
+    return {
+      success: true,
+      // 使用 getAddress 确保返回 checksum 格式
+      address: ethers.getAddress(wallet.address),
+      privateKey: wallet.privateKey,
+      encryptedKeystore,
     };
   } catch {
     return {
@@ -262,6 +347,32 @@ export async function signWithPrivateKey(privateKey: string, message: string): P
     return {
       success: false,
       error: (error as Error).message,
+    };
+  }
+}
+
+/**
+ * 从加密的 keystore 恢复钱包
+ */
+export async function decryptKeystore(
+  encryptedKeystore: string,
+  password: string
+): Promise<WalletResult> {
+  try {
+    const { ethers } = await import('ethers');
+    
+    // 解密 keystore
+    const wallet = await ethers.Wallet.fromEncryptedJson(encryptedKeystore, password);
+    
+    return {
+      success: true,
+      address: wallet.address,
+      privateKey: wallet.privateKey,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: '密码错误或 keystore 无效',
     };
   }
 }

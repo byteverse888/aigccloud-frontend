@@ -28,6 +28,7 @@ import {
   Users,
   LogOut,
   Wallet,
+  Crown,
 } from 'lucide-react';
 
 export function Header() {
@@ -63,6 +64,13 @@ export function Header() {
 
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center justify-end gap-4 border-b bg-background px-4 md:px-6">
+      {/* 会员订阅 */}
+      <Link href="/profile/membership">
+        <Button variant="ghost" size="icon" className="relative">
+          <Crown className="h-5 w-5 text-yellow-500" />
+        </Button>
+      </Link>
+
       {/* 购物车 */}
       <Link href="/cart">
         <Button variant="ghost" size="icon" className="relative">

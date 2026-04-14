@@ -33,7 +33,6 @@ import {
 
 const registerSchema = z
   .object({
-    username: z.string().min(3, '用户名至少3个字符').max(20, '用户名最多20个字符'),
     email: z.string().email('请输入有效的邮箱地址'),
     password: z.string().min(6, '密码至少6位').max(32, '密码最多32位'),
     confirmPassword: z.string(),
@@ -376,16 +375,20 @@ function RegisterContent() {
         </CardHeader>
         <CardContent>
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-2">
+            <TabsList className="grid w-full grid-cols-1">
               <TabsTrigger value="email">
                 <Mail className="mr-2 h-4 w-4" />
                 邮箱注册
               </TabsTrigger>
+              {/* 手机注册暂时隐藏 */}
+              {false && (
               <TabsTrigger value="phone">
                 <Smartphone className="mr-2 h-4 w-4" />
                 手机注册
               </TabsTrigger>
-              {/* Web3注册暂时隐藏，等待Electron客户端完成
+              )}
+              {/* Web3注册暂时隐藏，等待Electron客户端完成 */}
+              {/*
               <TabsTrigger value="web3">
                 <Wallet className="mr-2 h-4 w-4" />
                 WEB3账户
@@ -396,11 +399,6 @@ function RegisterContent() {
             {/* 邮箱注册 */}
             <TabsContent value="email" className="mt-4">
               <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="username">用户名</Label>
-                  <Input id="username" placeholder="请输入用户名" {...register('username')} disabled={isLoading} />
-                  {errors.username && <p className="text-sm text-destructive">{errors.username.message}</p>}
-                </div>
                 <div className="space-y-2">
                   <Label htmlFor="email">邮箱</Label>
                   <Input id="email" type="email" placeholder="请输入邮箱" {...register('email')} disabled={isLoading} />
