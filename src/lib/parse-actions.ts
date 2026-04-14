@@ -5,7 +5,7 @@
  */
 
 const PARSE_SERVER_URL = process.env.PARSE_SERVER_URL || 'http://localhost:1337/parse';
-const PARSE_APP_ID = process.env.PARSE_APP_ID || 'aigccloud';
+const PARSE_APP_ID = process.env.PARSE_APP_ID || process.env.NEXT_PUBLIC_PARSE_APP_ID || 'aigccloud';
 const PARSE_REST_API_KEY = process.env.PARSE_REST_API_KEY || 'restapi_service_key';
 
 // ============ 错误信息翻译 ============
