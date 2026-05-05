@@ -6,7 +6,8 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { getPresignedDownloadUrl } from "@/lib/storage-actions";
+import { storageApi } from "@/lib/api";
+import { useAuthStore } from "@/store";
 
 interface SignedUrlState {
   url: string | null;
@@ -45,10 +46,15 @@ export function useSignedUrl(
     setState(prev => ({ ...prev, loading: true, error: null }));
 
     try {
-      const result = await getPresignedDownloadUrl(fileKey, expiresIn);
-      expiresAtRef.current = result.expiresAt;
+      const token = useAuthStore.getState().user?.jwtToken;
+      if (!token) {
+        setState({ url: fallbackUrl || null, loading: false, error: "未登录" });
+        return;
+      }
+      const result = await storageApi.presignDownload(fileKey, token);
+      expiresAtRef.current = Date.now() + (result.expires_in || expiresIn) * 1000;
       setState({
-        url: result.downloadUrl,
+        url: result.download_url,
         loading: false,
         error: null,
       });

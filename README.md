@@ -17,14 +17,17 @@
 # 安装依赖
 pnpm install
 
-# 启动开发服务
-pnpm dev
-
 # 构建
 pnpm build
 
 # 代码检查
 pnpm lint
+
+# 启动开发服务
+pnpm dev
+
+# 启动服务
+pnpm start -p 3001
 ```
 
 ## 测试

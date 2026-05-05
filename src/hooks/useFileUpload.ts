@@ -2,11 +2,12 @@
 
 /**
  * 文件上传 Hook
- * 使用预签名URL上传文件到S3兼容存储
+ * 通过后端预签名URL上传文件到S3兼容存储（密钥不下发到前端）
  */
 
 import { useState, useCallback } from "react";
-import { getPresignedUploadUrl, getBatchPresignedUploadUrls } from "@/lib/storage-actions";
+import { storageApi } from "@/lib/api";
+import { useAuthStore } from "@/store";
 
 interface UploadProgress {
   filename: string;
@@ -19,14 +20,20 @@ interface UploadProgress {
 
 interface UseFileUploadOptions {
   prefix?: string;
+  /** @deprecated 后端从 JWT 解析 userId，此参数不再使用 */
   userId?: string;
-  isPublic?: boolean; // 是否公开访问（头像等场景）
+  isPublic?: boolean; // 是否公开访问（头像等场景返回短时签名URL）
   onSuccess?: (fileUrl: string, fileKey: string, filename: string) => void;
   onError?: (error: Error, filename: string) => void;
 }
 
+/** 从 store 取 JWT Token */
+function getToken(): string | null {
+  return useAuthStore.getState().user?.jwtToken || null;
+}
+
 export function useFileUpload(options: UseFileUploadOptions = {}) {
-  const { prefix = "uploads", userId, isPublic = false, onSuccess, onError } = options;
+  const { prefix = "uploads", isPublic = false, onSuccess, onError } = options;
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState<UploadProgress[]>([]);
 
@@ -44,14 +51,22 @@ export function useFileUpload(options: UseFileUploadOptions = {}) {
       ]);
 
       try {
-        // 1. 获取预签名URL（Server Action）
-        const { uploadUrl, fileUrl, fileKey } = await getPresignedUploadUrl(
-          filename,
-          file.type || "application/octet-stream",
-          prefix,
-          userId,
-          isPublic
+        const token = getToken();
+        if (!token) throw new Error("未登录，无法上传");
+
+        // 1. 向后端请求预签名上传URL
+        const presign = await storageApi.presignUpload(
+          {
+            filename,
+            content_type: file.type || "application/octet-stream",
+            prefix,
+          },
+          token
         );
+
+        const uploadUrl = presign.upload_url;
+        let fileUrl = presign.file_url;
+        const fileKey = presign.file_key;
 
         setProgress((prev) =>
           prev.map((p) =>
@@ -59,7 +74,7 @@ export function useFileUpload(options: UseFileUploadOptions = {}) {
           )
         );
 
-        // 2. 使用预签名URL上传文件
+        // 2. 使用预签名URL直传到S3
         const response = await fetch(uploadUrl, {
           method: "PUT",
           body: file,
@@ -70,6 +85,16 @@ export function useFileUpload(options: UseFileUploadOptions = {}) {
 
         if (!response.ok) {
           throw new Error(`上传失败: ${response.status}`);
+        }
+
+        // 3. 公开访问场景（如头像）：换成短时签名下载URL
+        if (isPublic) {
+          try {
+            const download = await storageApi.presignDownload(fileKey, token);
+            fileUrl = download.download_url;
+          } catch {
+            // 获取签名URL失败，退化为原始file_url
+          }
         }
 
         setProgress((prev) =>
@@ -97,7 +122,7 @@ export function useFileUpload(options: UseFileUploadOptions = {}) {
         setUploading(false);
       }
     },
-    [prefix, userId, onSuccess, onError]
+    [prefix, isPublic, onSuccess, onError]
   );
 
   /**
@@ -119,17 +144,33 @@ export function useFileUpload(options: UseFileUploadOptions = {}) {
         }))
       );
 
-      // 批量获取预签名URL
-      const presignedUrls = await getBatchPresignedUploadUrls(
-        files.map((f) => ({ filename: f.name, contentType: f.type })),
-        prefix,
-        userId
+      const token = getToken();
+      if (!token) {
+        setUploading(false);
+        onError?.(new Error("未登录，无法上传"), files[0]?.name || "");
+        return results;
+      }
+
+      // 向后端批量获取预签名URL
+      const presignResp = await storageApi.presignBatchUpload(
+        {
+          files: files.map((f) => ({
+            filename: f.name,
+            content_type: f.type || "application/octet-stream",
+          })),
+          prefix,
+        },
+        token
       );
+      const presignedFiles = presignResp.files;
 
       // 并行上传
       await Promise.all(
         files.map(async (file, index) => {
-          const { uploadUrl, fileUrl, fileKey } = presignedUrls[index];
+          const item = presignedFiles[index];
+          const uploadUrl = item.upload_url;
+          const fileUrl = item.file_url;
+          const fileKey = item.file_key;
 
           setProgress((prev) =>
             prev.map((p, i) =>
@@ -175,7 +216,7 @@ export function useFileUpload(options: UseFileUploadOptions = {}) {
       setUploading(false);
       return results;
     },
-    [prefix, userId, onSuccess, onError]
+    [prefix, onSuccess, onError]
   );
 
   /**
@@ -208,11 +249,15 @@ export async function getFileUrl(
     return fileUrl;
   }
 
-  // 私有文件需要获取预签名下载URL
   if (fileKey) {
-    const { getPresignedDownloadUrl } = await import("@/lib/storage-actions");
-    const { downloadUrl } = await getPresignedDownloadUrl(fileKey);
-    return downloadUrl;
+    const token = getToken();
+    if (!token) return fileUrl;
+    try {
+      const { download_url } = await storageApi.presignDownload(fileKey, token);
+      return download_url;
+    } catch {
+      return fileUrl;
+    }
   }
 
   return fileUrl;

@@ -18,7 +18,7 @@ import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '@/store';
 import { createAITask } from '@/lib/parse-actions';
-import { getPresignedUploadUrl } from '@/lib/storage-actions';
+import { storageApi } from '@/lib/api';
 
 const voices = [
   { value: 'female1', label: '女声 - 温柔' },
@@ -131,12 +131,19 @@ export default function TextToSpeechPage() {
     
     setIsUploading(true);
     try {
-      const { uploadUrl, fileUrl } = await getPresignedUploadUrl(
-        audioFile.name,
-        audioFile.type || 'audio/mpeg',
-        'audio',
-        user.objectId
+      const token = user.jwtToken;
+      if (!token) throw new Error('未登录');
+
+      const presign = await storageApi.presignUpload(
+        {
+          filename: audioFile.name,
+          content_type: audioFile.type || 'audio/mpeg',
+          prefix: 'audio',
+        },
+        token
       );
+      const uploadUrl = presign.upload_url;
+      const fileUrl = presign.file_url;
       
       const uploadResponse = await fetch(uploadUrl, {
         method: 'PUT',

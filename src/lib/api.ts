@@ -418,6 +418,65 @@ export const walletApi = {
     }),
 };
 
+// Storage API
+export const storageApi = {
+  // 预签名上传
+  presignUpload: (
+    data: { filename: string; content_type?: string; prefix?: string },
+    token: string
+  ) =>
+    fetchApi<{
+      upload_url: string;
+      file_url: string;
+      file_key: string;
+      expires_in: number;
+    }>('/api/v1/storage/presign/upload', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify(data),
+    }),
+
+  // 预签名下载
+  presignDownload: (fileKey: string, token: string) =>
+    fetchApi<{
+      download_url: string;
+      expires_in: number;
+    }>('/api/v1/storage/presign/download', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ file_key: fileKey }),
+    }),
+
+  // 批量预签名上传
+  presignBatchUpload: (
+    data: { files: Array<{ filename: string; content_type?: string }>; prefix?: string },
+    token: string
+  ) =>
+    fetchApi<{
+      files: Array<{
+        filename: string;
+        upload_url: string;
+        file_url: string;
+        file_key: string;
+      }>;
+      expires_in: number;
+    }>('/api/v1/storage/presign/batch-upload', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify(data),
+    }),
+
+  // 删除文件
+  deleteFile: (fileKey: string, token: string) =>
+    fetchApi<{ success: boolean; message: string }>(
+      `/api/v1/storage/file/${fileKey}`,
+      {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` },
+      }
+    ),
+};
+
 export default {
   user: userApi,
   auth: authApi,
@@ -427,4 +486,5 @@ export default {
   promotion: promotionApi,
   member: memberApi,
   wallet: walletApi,
+  storage: storageApi,
 };

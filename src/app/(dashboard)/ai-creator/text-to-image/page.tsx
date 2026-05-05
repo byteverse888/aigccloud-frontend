@@ -8,7 +8,7 @@ import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAICreationStore, useAuthStore } from '@/store';
 import { createAITask } from '@/lib/parse-actions';
-import { getPresignedUploadUrl } from '@/lib/storage-actions';
+import { storageApi } from '@/lib/api';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -124,12 +124,19 @@ export default function ImageGenerationPage() {
     
     setIsUploading(true);
     try {
-      const { uploadUrl, fileUrl } = await getPresignedUploadUrl(
-        referenceFile.name,
-        referenceFile.type || 'image/jpeg',
-        'images',
-        user.objectId
+      const token = user.jwtToken;
+      if (!token) throw new Error('未登录');
+
+      const presign = await storageApi.presignUpload(
+        {
+          filename: referenceFile.name,
+          content_type: referenceFile.type || 'image/jpeg',
+          prefix: 'images',
+        },
+        token
       );
+      const uploadUrl = presign.upload_url;
+      const fileUrl = presign.file_url;
       
       const uploadResponse = await fetch(uploadUrl, {
         method: 'PUT',
