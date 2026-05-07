@@ -14,6 +14,14 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import {
   Package,
   Plus,
   Search,
@@ -40,7 +48,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useAuthStore } from '@/store';
-import { getUserAIIPAssets, updateAIIPAssetStatus, deleteAIIPAsset, initUserAIIPAssets, clearUserAIIPAssets, type AIIPAsset } from '@/lib/parse-actions';
+import { getUserAIIPAssets, updateAIIPAssetStatus, deleteAIIPAsset, initUserAIIPAssets, clearUserAIIPAssets, updateObject, type AIIPAsset } from '@/lib/parse-actions';
 import toast from 'react-hot-toast';
 
 const PAGE_SIZE = 20;
@@ -76,14 +84,18 @@ export default function AssetsPage() {
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
+  const [previewAsset, setPreviewAsset] = useState<AIIPAsset | null>(null);
+  const [editAsset, setEditAsset] = useState<AIIPAsset | null>(null);
+  const [editForm, setEditForm] = useState({ name: '', description: '', price: 0, category: 'image' });
   const { user } = useAuthStore();
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
   const fetchProducts = useCallback(async () => {
-    if (!user?.web3Address) return;
+    if (!user) return;
+    const ownerKey = user.web3Address || user.objectId;
     setLoading(true);
-    const result = await getUserAIIPAssets(user.web3Address, {
+    const result = await getUserAIIPAssets(ownerKey, {
       category: typeFilter,
       status: statusFilter,
       page,
@@ -104,7 +116,8 @@ export default function AssetsPage() {
 
   const handleDelete = async (assetId: string) => {
     if (!confirm('确定要删除这个资产吗？')) return;
-    const result = await deleteAIIPAsset(assetId);
+    const ownerKey = user?.web3Address || user?.objectId || '';
+    const result = await deleteAIIPAsset(assetId, ownerKey);
     if (result.success) {
       toast.success('删除成功');
       fetchProducts();
@@ -114,13 +127,36 @@ export default function AssetsPage() {
   };
 
   const handleToggleStatus = async (asset: AIIPAsset) => {
-    const newStatus = asset.status === 'approved' ? 'offline' : 'approved';
+    // 上架流程：draft/offline/rejected -> pending(提交审核)；approved -> offline(下架)
+    let newStatus: AIIPAsset['status'];
+    if (asset.status === 'approved') {
+      newStatus = 'offline';
+    } else {
+      newStatus = 'pending'; // 提交审核
+    }
     const result = await updateAIIPAssetStatus(asset.objectId, newStatus);
     if (result.success) {
-      toast.success(newStatus === 'approved' ? '上架成功' : '下架成功');
+      toast.success(newStatus === 'pending' ? '已提交审核' : '下架成功');
       fetchProducts();
     } else {
       toast.error(result.error || '操作失败');
+    }
+  };
+
+  const handleEdit = (asset: AIIPAsset) => {
+    setEditForm({ name: asset.name, description: asset.description || '', price: asset.price, category: asset.category });
+    setEditAsset(asset);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editAsset) return;
+    const result = await updateObject('AIIPAsset', editAsset.objectId, editForm);
+    if (result.success) {
+      toast.success('保存成功');
+      setEditAsset(null);
+      fetchProducts();
+    } else {
+      toast.error(result.error || '保存失败');
     }
   };
 
@@ -131,12 +167,12 @@ export default function AssetsPage() {
   };
 
   const handleClearMock = async () => {
-    if (!user?.web3Address) {
-      toast.error('请先登录Web3账户');
+    if (!user) {
+      toast.error('请先登录');
       return;
     }
     if (!confirm('确定要清空您的AIIP模拟数据吗？')) return;
-    const result = await clearUserAIIPAssets(user.web3Address);
+    const result = await clearUserAIIPAssets(user.web3Address || user.objectId);
     if (result.success) {
       toast.success(result.message || '清空成功');
       setPage(1);
@@ -147,11 +183,11 @@ export default function AssetsPage() {
   };
 
   const handleCreateMock = async () => {
-    if (!user?.web3Address) {
-      toast.error('请先登录Web3账户');
+    if (!user) {
+      toast.error('请先登录');
       return;
     }
-    const result = await initUserAIIPAssets(user.objectId, user.web3Address, user.username || '用户');
+    const result = await initUserAIIPAssets(user.objectId, user.web3Address || user.objectId, user.username || '用户');
     if (result.success) {
       toast.success(result.message || '创建成功');
       fetchProducts();
@@ -266,9 +302,9 @@ export default function AssetsPage() {
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild><Button variant="secondary" size="icon" className="absolute bottom-2 right-2"><MoreVertical className="h-4 w-4" /></Button></DropdownMenuTrigger>
                     <DropdownMenuContent>
-                      <DropdownMenuItem><Eye className="mr-2 h-4 w-4" />预览</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleToggleStatus(product)}><ShoppingBag className="mr-2 h-4 w-4" />{product.status === 'approved' ? '下架' : '上架'}</DropdownMenuItem>
-                      <DropdownMenuItem><Edit className="mr-2 h-4 w-4" />编辑</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setPreviewAsset(product)}><Eye className="mr-2 h-4 w-4" />预览</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleToggleStatus(product)}><ShoppingBag className="mr-2 h-4 w-4" />{product.status === 'approved' ? '下架' : '提交审核'}</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleEdit(product)}><Edit className="mr-2 h-4 w-4" />编辑</DropdownMenuItem>
                       <DropdownMenuItem className="text-destructive" onClick={() => handleDelete(product.objectId)}><Trash2 className="mr-2 h-4 w-4" />删除</DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -311,7 +347,7 @@ export default function AssetsPage() {
                       <td className="p-4">
                         <div className="flex gap-2">
                           <Button size="sm" variant="ghost" onClick={() => handleToggleStatus(product)}><ShoppingBag className="h-4 w-4" /></Button>
-                          <Button size="sm" variant="ghost"><Edit className="h-4 w-4" /></Button>
+                          <Button size="sm" variant="ghost" onClick={() => handleEdit(product)}><Edit className="h-4 w-4" /></Button>
                           <Button size="sm" variant="ghost" className="text-destructive" onClick={() => handleDelete(product.objectId)}><Trash2 className="h-4 w-4" /></Button>
                         </div>
                       </td>
@@ -341,6 +377,61 @@ export default function AssetsPage() {
           </div>
         </div>
       )}
+
+      {/* 预览弹窗 */}
+      <Dialog open={!!previewAsset} onOpenChange={() => setPreviewAsset(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle>{previewAsset?.name}</DialogTitle></DialogHeader>
+          {previewAsset && (
+            <div className="space-y-4">
+              {previewAsset.cover && <img src={previewAsset.cover} alt={previewAsset.name} className="w-full rounded-lg" />}
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div>类型：{previewAsset.category}</div>
+                <div>价格：¥{previewAsset.price}</div>
+                <div>状态：<Badge variant={statusColors[previewAsset.status] || 'default'}>{statusLabels[previewAsset.status]}</Badge></div>
+                <div>浏览量：{previewAsset.views || 0}</div>
+              </div>
+              {previewAsset.description && <p className="text-sm text-muted-foreground">{previewAsset.description}</p>}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* 编辑弹窗 */}
+      <Dialog open={!!editAsset} onOpenChange={() => setEditAsset(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>编辑资产</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>名称</Label>
+              <Input value={editForm.name} onChange={(e) => setEditForm(f => ({ ...f, name: e.target.value }))} />
+            </div>
+            <div className="space-y-2">
+              <Label>类型</Label>
+              <Select value={editForm.category} onValueChange={(v) => setEditForm(f => ({ ...f, category: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="image">图片</SelectItem>
+                  <SelectItem value="audio">音频</SelectItem>
+                  <SelectItem value="video">视频</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>价格 (元)</Label>
+              <Input type="number" value={editForm.price} onChange={(e) => setEditForm(f => ({ ...f, price: Number(e.target.value) }))} />
+            </div>
+            <div className="space-y-2">
+              <Label>描述</Label>
+              <Textarea value={editForm.description} onChange={(e) => setEditForm(f => ({ ...f, description: e.target.value }))} rows={3} />
+            </div>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => setEditAsset(null)}>取消</Button>
+              <Button onClick={handleSaveEdit}>保存</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -134,14 +134,11 @@ export default function TextToSpeechPage() {
       const token = user.jwtToken;
       if (!token) throw new Error('未登录');
 
-      const presign = await storageApi.presignUpload(
-        {
-          filename: audioFile.name,
-          content_type: audioFile.type || 'audio/mpeg',
-          prefix: 'audio',
-        },
-        token
-      );
+      const presign = await storageApi.presignUpload({
+        filename: audioFile.name,
+        content_type: audioFile.type || 'audio/mpeg',
+        prefix: 'audio',
+      });
       const uploadUrl = presign.upload_url;
       const fileUrl = presign.file_url;
       

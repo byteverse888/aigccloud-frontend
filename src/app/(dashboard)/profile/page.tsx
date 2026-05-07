@@ -33,6 +33,7 @@ const profileMenus = [
   { icon: Settings, label: '账户设置', href: '/profile/settings', desc: '修改个人信息和密码' },
   { icon: Wallet, label: '创作收益', href: '/profile/earnings', desc: '查看收益和提现' },
   { icon: ShoppingBag, label: '我的订单', href: '/profile/orders', desc: '查看订单记录' },
+  { icon: ShoppingBag, label: '我的购买', href: '/profile/purchases', desc: '已购商品下载' },
   { icon: CreditCard, label: '充值计费', href: '/profile/billing', desc: '充值和消费记录' },
   { icon: Bell, label: '消息中心', href: '/profile/notifications', desc: '系统通知和消息' },
   { icon: Heart, label: '我的收藏', href: '/profile/favorites', desc: '收藏的商品' },

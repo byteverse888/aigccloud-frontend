@@ -28,7 +28,11 @@ import {
   Share2,
   Image,
   Music,
+  Music2,
   Video,
+  Mic,
+  Bot,
+  BookImage,
   SlidersHorizontal,
   Loader2,
   MessageCircle,
@@ -54,15 +58,18 @@ import {
 import toast from 'react-hot-toast';
 import { cn } from '@/lib/utils';
 import { mockTransfer, transferWithMetaMask, transferWithPrivateKey, hasExternalWallet } from '@/lib/web3-client';
+import { ProductDetailDialog } from '@/components/product-detail-dialog';
 
 const PAGE_SIZE = 20;
 
 const categories = [
-  { value: 'all', label: '全部' },
-  { value: 'image', label: '图片' },
-  { value: 'audio', label: '音频' },
-  { value: 'video', label: '视频' },
-  { value: 'model', label: '模型' },
+  { value: 'all', label: '全部', icon: null },
+  { value: 'image', label: '图片', icon: Image },
+  { value: 'audio', label: '音频', icon: Mic },
+  { value: 'video', label: '视频', icon: Video },
+  { value: 'comic', label: '图文漫画', icon: BookImage },
+  { value: 'music', label: '音乐', icon: Music2 },
+  { value: 'digital-human', label: '数字人', icon: Bot },
 ];
 
 const sortOptions = [
@@ -75,8 +82,11 @@ const sortOptions = [
 
 const categoryIcons: Record<string, typeof Image> = {
   image: Image,
-  audio: Music,
+  audio: Mic,
   video: Video,
+  comic: BookImage,
+  music: Music2,
+  'digital-human': Bot,
 };
 
 export default function MarketPage() {
@@ -102,6 +112,8 @@ export default function MarketPage() {
   const [txHashInput, setTxHashInput] = useState('');
   const [verifying, setVerifying] = useState(false);
   const [privateKeyInput, setPrivateKeyInput] = useState(''); // 私钥输入
+  const [detailDialogOpen, setDetailDialogOpen] = useState(false);
+  const [detailProduct, setDetailProduct] = useState<Product | null>(null);
   const { addItem } = useCartStore();
   const { user } = useAuthStore();
   const { privateKey: storedPrivateKey, walletType } = useWalletStore(); // 从内存获取私钥
@@ -323,12 +335,12 @@ export default function MarketPage() {
   };
 
   const handleClearMock = async () => {
-    if (!user?.web3Address) {
-      toast.error('请先登录Web3账户');
+    if (!user) {
+      toast.error('请先登录');
       return;
     }
     if (!confirm('确定要清空您创建的商城模拟数据吗？')) return;
-    const result = await clearMarketMockProducts(user.web3Address);
+    const result = await clearMarketMockProducts(user.web3Address || user.objectId);
     if (result.success) {
       toast.success(result.message || '清空成功');
       setPage(1);
@@ -339,11 +351,11 @@ export default function MarketPage() {
   };
 
   const handleCreateMock = async () => {
-    if (!user?.web3Address) {
-      toast.error('请先登录Web3账户');
+    if (!user) {
+      toast.error('请先登录');
       return;
     }
-    const result = await initMarketMockProducts(user.web3Address);
+    const result = await initMarketMockProducts(user.web3Address || user.objectId);
     if (result.success) {
       toast.success(result.message || '创建成功');
       fetchProducts();
@@ -472,7 +484,7 @@ export default function MarketPage() {
                   </div>
                 </div>
                 <CardContent className="p-4">
-                  <Link href={`/market/${product.objectId}`}><h3 className="truncate font-medium hover:text-primary">{product.name}</h3></Link>
+                  <h3 className="truncate font-medium hover:text-primary cursor-pointer" onClick={() => { setDetailProduct(product); setDetailDialogOpen(true); }}>{product.name}</h3>
                   <p className="mt-1 text-sm text-muted-foreground">{product.creatorName || '匿名创作者'}</p>
                   <div className="mt-2 flex items-center gap-1 text-sm text-muted-foreground">
                     <span>{product.sales || 0} 销量</span><span>|</span><span>{product.favoriteCount || 0} 收藏</span><span>|</span><span>{product.commentCount || 0} 评论</span><span>|</span><span>{product.likeCount || 0} 赞</span>
@@ -626,6 +638,19 @@ export default function MarketPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* 商品详情弹窗 */}
+      <ProductDetailDialog
+        product={detailProduct}
+        open={detailDialogOpen}
+        onOpenChange={setDetailDialogOpen}
+        onPurchase={handlePurchase}
+        onAddToCart={handleAddToCart}
+        onFavorite={handleFavorite}
+        onLike={handleLike}
+        isLiked={detailProduct ? likedIds.has(detailProduct.objectId) : false}
+        isFavorited={detailProduct ? favoritedIds.has(detailProduct.objectId) : false}
+      />
     </div>
   );
 }

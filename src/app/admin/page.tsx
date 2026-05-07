@@ -1,83 +1,57 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Users, ShoppingBag, CreditCard, TrendingUp, Package, AlertCircle } from 'lucide-react';
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  BarElement,
-  ArcElement,
-  Title,
-  Tooltip,
-  Legend,
-  Filler,
-} from 'chart.js';
-import { Line, Bar, Doughnut } from 'react-chartjs-2';
+import { Users, ShoppingBag, CreditCard, Package, AlertCircle, Loader2 } from 'lucide-react';
+import { adminApi } from '@/lib/api';
 
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  BarElement,
-  ArcElement,
-  Title,
-  Tooltip,
-  Legend,
-  Filler
-);
-
-const userGrowthData = {
-  labels: ['1月', '2月', '3月', '4月', '5月', '6月', '7月'],
-  datasets: [
-    {
-      label: '新增用户',
-      data: [120, 190, 300, 500, 420, 650, 890],
-      borderColor: 'rgb(59, 130, 246)',
-      backgroundColor: 'rgba(59, 130, 246, 0.1)',
-      fill: true,
-      tension: 0.4,
-    },
-  ],
-};
-
-const salesData = {
-  labels: ['1月', '2月', '3月', '4月', '5月', '6月', '7月'],
-  datasets: [
-    {
-      label: '销售额',
-      data: [12000, 19000, 30000, 50000, 42000, 65000, 89000],
-      backgroundColor: 'rgba(34, 197, 94, 0.8)',
-    },
-  ],
-};
-
-const categoryData = {
-  labels: ['图片', '音频', '视频', '模型'],
-  datasets: [
-    {
-      data: [45, 25, 20, 10],
-      backgroundColor: [
-        'rgba(59, 130, 246, 0.8)',
-        'rgba(168, 85, 247, 0.8)',
-        'rgba(34, 197, 94, 0.8)',
-        'rgba(249, 115, 22, 0.8)',
-      ],
-    },
-  ],
-};
+const weekLabels = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 
 export default function AdminDashboardPage() {
+  const [loading, setLoading] = useState(true);
+  const [userStats, setUserStats] = useState<{ total_users: number; today_new: number } | null>(null);
+  const [orderStats, setOrderStats] = useState<{ total: number; today_count: number; daily_trend: number[]; average_order_value: number } | null>(null);
+  const [productStats, setProductStats] = useState<{ total: number; status_distribution: Record<string, number>; category_distribution: Array<{ category: string; count: number }>; top_products: Array<{ id: string; name: string; sales: number; revenue: number }>; pending_reports: number } | null>(null);
+  const [revenueStats, setRevenueStats] = useState<{ total_revenue: number; this_month: number; last_month: number; today: number; payment_methods: Array<{ method: string; amount: number; percentage: number }>; daily_trend: number[] } | null>(null);
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      try {
+        const [users, orders, products, revenue] = await Promise.all([
+          adminApi.statsUsers(),
+          adminApi.statsOrders(),
+          adminApi.statsProducts(),
+          adminApi.statsRevenue(),
+        ]);
+        setUserStats(users);
+        setOrderStats(orders);
+        setProductStats(products);
+        setRevenueStats(revenue);
+      } catch (e) {
+        console.error('加载统计数据失败', e);
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  const pendingProducts = productStats?.status_distribution?.pending ?? 0;
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">数据看板</h1>
-        <p className="text-muted-foreground">
-          平台运营数据概览
-        </p>
+        <p className="text-muted-foreground">平台运营数据概览</p>
       </div>
 
       {/* 关键指标 */}
@@ -88,9 +62,9 @@ export default function AdminDashboardPage() {
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">128</div>
+            <div className="text-2xl font-bold">{userStats?.today_new ?? 0}</div>
             <p className="text-xs text-muted-foreground">
-              <span className="text-green-500">+12%</span> 较昨日
+              总用户 {userStats?.total_users?.toLocaleString() ?? 0}
             </p>
           </CardContent>
         </Card>
@@ -100,9 +74,9 @@ export default function AdminDashboardPage() {
             <CreditCard className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">¥12,580</div>
+            <div className="text-2xl font-bold">¥{revenueStats?.today?.toLocaleString() ?? 0}</div>
             <p className="text-xs text-muted-foreground">
-              <span className="text-green-500">+8%</span> 较昨日
+              本月 ¥{revenueStats?.this_month?.toLocaleString() ?? 0}
             </p>
           </CardContent>
         </Card>
@@ -112,7 +86,7 @@ export default function AdminDashboardPage() {
             <Package className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">23</div>
+            <div className="text-2xl font-bold">{pendingProducts}</div>
             <p className="text-xs text-muted-foreground">需要及时处理</p>
           </CardContent>
         </Card>
@@ -122,78 +96,91 @@ export default function AdminDashboardPage() {
             <ShoppingBag className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">86</div>
+            <div className="text-2xl font-bold">{orderStats?.today_count ?? 0}</div>
             <p className="text-xs text-muted-foreground">
-              <span className="text-green-500">+15%</span> 较昨日
+              客单价 ¥{orderStats?.average_order_value ?? 0}
             </p>
           </CardContent>
         </Card>
       </div>
 
-      {/* 图表区域 */}
+      {/* 图表区域 - 本周订单和收入趋势 */}
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>用户增长趋势</CardTitle>
-            <CardDescription>近7个月新增用户统计</CardDescription>
+            <CardTitle>本周订单趋势</CardTitle>
+            <CardDescription>每日订单数量</CardDescription>
           </CardHeader>
           <CardContent>
-            <Line
-              data={userGrowthData}
-              options={{
-                responsive: true,
-                plugins: {
-                  legend: { display: false },
-                },
-                scales: {
-                  y: { beginAtZero: true },
-                },
-              }}
-            />
+            <div className="flex items-end gap-3 h-40">
+              {(orderStats?.daily_trend ?? []).map((v, i) => {
+                const max = Math.max(...(orderStats?.daily_trend ?? [1]));
+                return (
+                  <div key={weekLabels[i]} className="flex-1 flex flex-col items-center gap-1">
+                    <span className="text-xs font-medium">{v}</span>
+                    <div
+                      className="w-full bg-blue-500/80 rounded-t min-h-[4px]"
+                      style={{ height: `${max > 0 ? (v / max) * 100 : 0}%` }}
+                    />
+                    <span className="text-xs text-muted-foreground">{weekLabels[i]}</span>
+                  </div>
+                );
+              })}
+            </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle>销售额统计</CardTitle>
-            <CardDescription>近7个月销售额统计</CardDescription>
+            <CardTitle>本周收入趋势</CardTitle>
+            <CardDescription>每日收入 (¥)</CardDescription>
           </CardHeader>
           <CardContent>
-            <Bar
-              data={salesData}
-              options={{
-                responsive: true,
-                plugins: {
-                  legend: { display: false },
-                },
-                scales: {
-                  y: { beginAtZero: true },
-                },
-              }}
-            />
+            <div className="flex items-end gap-3 h-40">
+              {(revenueStats?.daily_trend ?? []).map((v, i) => {
+                const max = Math.max(...(revenueStats?.daily_trend ?? [1]));
+                return (
+                  <div key={weekLabels[i]} className="flex-1 flex flex-col items-center gap-1">
+                    <span className="text-xs font-medium">¥{v}</span>
+                    <div
+                      className="w-full bg-green-500/80 rounded-t min-h-[4px]"
+                      style={{ height: `${max > 0 ? (v / max) * 100 : 0}%` }}
+                    />
+                    <span className="text-xs text-muted-foreground">{weekLabels[i]}</span>
+                  </div>
+                );
+              })}
+            </div>
           </CardContent>
         </Card>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
+        {/* 商品分类占比 */}
         <Card>
           <CardHeader>
-            <CardTitle>商品分类占比</CardTitle>
-            <CardDescription>各分类商品数量占比</CardDescription>
+            <CardTitle>商品分类分布</CardTitle>
+            <CardDescription>各分类商品数量</CardDescription>
           </CardHeader>
           <CardContent>
-            <Doughnut
-              data={categoryData}
-              options={{
-                responsive: true,
-                plugins: {
-                  legend: { position: 'bottom' },
-                },
-              }}
-            />
+            <div className="space-y-3">
+              {(productStats?.category_distribution ?? []).map((item) => (
+                <div key={item.category} className="flex items-center gap-3">
+                  <span className="w-16 text-sm">{item.category}</span>
+                  <div className="flex-1 bg-muted rounded-full h-3 overflow-hidden">
+                    <div
+                      className="bg-primary h-full rounded-full"
+                      style={{ width: `${productStats?.total ? (item.count / productStats.total) * 100 : 0}%` }}
+                    />
+                  </div>
+                  <span className="w-10 text-sm text-right">{item.count}</span>
+                </div>
+              ))}
+            </div>
           </CardContent>
         </Card>
 
+        {/* 待处理事项 */}
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -206,7 +193,7 @@ export default function AdminDashboardPage() {
               <div className="flex items-center justify-between rounded-lg border p-4">
                 <div>
                   <p className="font-medium">待审核商品</p>
-                  <p className="text-sm text-muted-foreground">23个商品等待审核</p>
+                  <p className="text-sm text-muted-foreground">{pendingProducts}个商品等待审核</p>
                 </div>
                 <span className="rounded-full bg-yellow-500/10 px-3 py-1 text-sm text-yellow-500">
                   待处理
@@ -214,20 +201,11 @@ export default function AdminDashboardPage() {
               </div>
               <div className="flex items-center justify-between rounded-lg border p-4">
                 <div>
-                  <p className="font-medium">被举报商品</p>
-                  <p className="text-sm text-muted-foreground">5个商品被举报</p>
+                  <p className="font-medium">待处理举报</p>
+                  <p className="text-sm text-muted-foreground">{productStats?.pending_reports ?? 0}个举报待处理</p>
                 </div>
                 <span className="rounded-full bg-red-500/10 px-3 py-1 text-sm text-red-500">
-                  紧急
-                </span>
-              </div>
-              <div className="flex items-center justify-between rounded-lg border p-4">
-                <div>
-                  <p className="font-medium">用户反馈</p>
-                  <p className="text-sm text-muted-foreground">12条未处理反馈</p>
-                </div>
-                <span className="rounded-full bg-blue-500/10 px-3 py-1 text-sm text-blue-500">
-                  普通
+                  {(productStats?.pending_reports ?? 0) > 0 ? '紧急' : '无'}
                 </span>
               </div>
             </div>

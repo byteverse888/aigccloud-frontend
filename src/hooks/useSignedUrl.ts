@@ -51,7 +51,7 @@ export function useSignedUrl(
         setState({ url: fallbackUrl || null, loading: false, error: "未登录" });
         return;
       }
-      const result = await storageApi.presignDownload(fileKey, token);
+      const result = await storageApi.presignDownload(fileKey);
       expiresAtRef.current = Date.now() + (result.expires_in || expiresIn) * 1000;
       setState({
         url: result.download_url,

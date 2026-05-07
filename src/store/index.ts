@@ -1,5 +1,14 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import type { User } from '@/types';
+
+// 扩展 User 类型，添加 store 专用字段
+interface StoreUser extends Omit<User, 'createdAt' | 'updatedAt' | 'memberExpireAt'> {
+  sessionToken?: string;
+  jwtToken?: string;
+  memberExpireAt?: string | Date;
+  coins?: number;
+}
 
 // ============ UI Store ============
 
@@ -22,30 +31,11 @@ export const useUIStore = create<UIState>()(
 
 // ============ Auth Store ============
 
-interface User {
-  objectId: string;
-  sessionToken?: string;  // Parse session token (for Parse API)
-  jwtToken?: string;      // JWT token (for backend API)
-  username: string;
-  email: string;
-  phone?: string;
-  role: string;
-  level: number;
-  memberLevel: 'normal' | 'vip' | 'svip';
-  memberExpireAt?: string | Date;
-  web3Address?: string;
-  inviteCount: number;
-  successRegCount: number;
-  totalIncentive: number;
-  avatar?: string;
-  avatarKey?: string; // S3 文件 key
-}
-
 interface AuthState {
-  user: User | null;
+  user: StoreUser | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  setUser: (user: User | null) => void;
+  setUser: (user: StoreUser | null) => void;
   setLoading: (loading: boolean) => void;
   logout: () => void;
 }
@@ -56,7 +46,7 @@ export const useAuthStore = create<AuthState>()(
       user: null,
       isAuthenticated: false,
       isLoading: true,
-      setUser: (user: User | null) => set({ user, isAuthenticated: !!user, isLoading: false }),
+      setUser: (user: StoreUser | null) => set({ user, isAuthenticated: !!user, isLoading: false }),
       setLoading: (loading: boolean) => set({ isLoading: loading }),
       logout: () => set({ user: null, isAuthenticated: false, isLoading: false }),
     }),

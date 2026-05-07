@@ -55,14 +55,11 @@ export function useFileUpload(options: UseFileUploadOptions = {}) {
         if (!token) throw new Error("未登录，无法上传");
 
         // 1. 向后端请求预签名上传URL
-        const presign = await storageApi.presignUpload(
-          {
-            filename,
-            content_type: file.type || "application/octet-stream",
-            prefix,
-          },
-          token
-        );
+        const presign = await storageApi.presignUpload({
+          filename,
+          content_type: file.type || "application/octet-stream",
+          prefix,
+        });
 
         const uploadUrl = presign.upload_url;
         let fileUrl = presign.file_url;
@@ -90,7 +87,7 @@ export function useFileUpload(options: UseFileUploadOptions = {}) {
         // 3. 公开访问场景（如头像）：换成短时签名下载URL
         if (isPublic) {
           try {
-            const download = await storageApi.presignDownload(fileKey, token);
+            const download = await storageApi.presignDownload(fileKey);
             fileUrl = download.download_url;
           } catch {
             // 获取签名URL失败，退化为原始file_url
@@ -152,16 +149,13 @@ export function useFileUpload(options: UseFileUploadOptions = {}) {
       }
 
       // 向后端批量获取预签名URL
-      const presignResp = await storageApi.presignBatchUpload(
-        {
-          files: files.map((f) => ({
-            filename: f.name,
-            content_type: f.type || "application/octet-stream",
-          })),
-          prefix,
-        },
-        token
-      );
+      const presignResp = await storageApi.presignBatchUpload({
+        files: files.map((f) => ({
+          filename: f.name,
+          content_type: f.type || "application/octet-stream",
+        })),
+        prefix,
+      });
       const presignedFiles = presignResp.files;
 
       // 并行上传
@@ -253,7 +247,7 @@ export async function getFileUrl(
     const token = getToken();
     if (!token) return fileUrl;
     try {
-      const { download_url } = await storageApi.presignDownload(fileKey, token);
+      const { download_url } = await storageApi.presignDownload(fileKey);
       return download_url;
     } catch {
       return fileUrl;

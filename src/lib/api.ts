@@ -1,5 +1,20 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
+/**
+ * 获取当前用户的 JWT Token（从 Zustand store 中读取）
+ */
+function getAuthToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem('auth-storage');
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed?.state?.user?.jwtToken || null;
+  } catch {
+    return null;
+  }
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function fetchApi<T = any>(
   endpoint: string,
@@ -7,10 +22,18 @@ async function fetchApi<T = any>(
 ): Promise<T> {
   const { headers: customHeaders, ...restOptions } = options || {};
   
+  // 自动注入 JWT Token
+  const token = getAuthToken();
+  const authHeaders: Record<string, string> = {};
+  if (token) {
+    authHeaders['Authorization'] = `Bearer ${token}`;
+  }
+
   const response = await fetch(`${API_URL}${endpoint}`, {
     ...restOptions,
     headers: {
       'Content-Type': 'application/json',
+      ...authHeaders,
       ...customHeaders,
     },
   });
@@ -361,35 +384,29 @@ export const memberApi = {
 // Wallet API
 export const walletApi = {
   // 创建钱包（将加密后的 keystore 保存到服务器）
-  createWallet: (web3Address: string, encryptedKeystore: string, token: string) =>
+  createWallet: (web3Address: string, encryptedKeystore: string) =>
     fetchApi<{
       success: boolean;
       message: string;
       web3Address: string;
     }>('/api/v1/users/wallet/create', {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-      },
       body: JSON.stringify({ web3_address: web3Address, encrypted_keystore: encryptedKeystore }),
     }),
 
   // 导入钱包
-  importWallet: (web3Address: string, encryptedKeystore: string, token: string) =>
+  importWallet: (web3Address: string, encryptedKeystore: string) =>
     fetchApi<{
       success: boolean;
       message: string;
       web3Address: string;
     }>('/api/v1/users/wallet/import', {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-      },
       body: JSON.stringify({ web3_address: web3Address, encrypted_keystore: encryptedKeystore }),
     }),
 
   // 转账（使用密码解密 keystore 后转账）
-  transfer: (toAddress: string, amount: string, password: string, token: string) =>
+  transfer: (toAddress: string, amount: string, password: string) =>
     fetchApi<{
       success: boolean;
       message: string;
@@ -399,32 +416,23 @@ export const walletApi = {
       amount: string;
     }>('/api/v1/users/wallet/transfer', {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-      },
       body: JSON.stringify({ to_address: toAddress, amount, password }),
     }),
 
   // 解绑钱包
-  unbindWallet: (token: string) =>
+  unbindWallet: () =>
     fetchApi<{
       success: boolean;
       message: string;
     }>('/api/v1/users/wallet/unbind', {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-      },
     }),
 };
 
 // Storage API
 export const storageApi = {
   // 预签名上传
-  presignUpload: (
-    data: { filename: string; content_type?: string; prefix?: string },
-    token: string
-  ) =>
+  presignUpload: (data: { filename: string; content_type?: string; prefix?: string }) =>
     fetchApi<{
       upload_url: string;
       file_url: string;
@@ -432,25 +440,22 @@ export const storageApi = {
       expires_in: number;
     }>('/api/v1/storage/presign/upload', {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}` },
       body: JSON.stringify(data),
     }),
 
   // 预签名下载
-  presignDownload: (fileKey: string, token: string) =>
+  presignDownload: (fileKey: string) =>
     fetchApi<{
       download_url: string;
       expires_in: number;
     }>('/api/v1/storage/presign/download', {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}` },
       body: JSON.stringify({ file_key: fileKey }),
     }),
 
   // 批量预签名上传
   presignBatchUpload: (
-    data: { files: Array<{ filename: string; content_type?: string }>; prefix?: string },
-    token: string
+    data: { files: Array<{ filename: string; content_type?: string }>; prefix?: string }
   ) =>
     fetchApi<{
       files: Array<{
@@ -462,19 +467,222 @@ export const storageApi = {
       expires_in: number;
     }>('/api/v1/storage/presign/batch-upload', {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}` },
       body: JSON.stringify(data),
     }),
 
   // 删除文件
-  deleteFile: (fileKey: string, token: string) =>
+  deleteFile: (fileKey: string) =>
     fetchApi<{ success: boolean; message: string }>(
       `/api/v1/storage/file/${fileKey}`,
-      {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` },
-      }
+      { method: 'DELETE' }
     ),
+};
+
+// Admin API
+export const adminApi = {
+  // 用户统计
+  statsUsers: () =>
+    fetchApi<{
+      total_users: number;
+      today_new: number;
+      role_distribution: Record<string, number>;
+    }>('/api/v1/admin/stats/users'),
+
+  // 订单统计
+  statsOrders: () =>
+    fetchApi<{
+      total: number;
+      today_count: number;
+      status_distribution: Record<string, number>;
+      daily_trend: number[];
+      average_order_value: number;
+    }>('/api/v1/admin/stats/orders'),
+
+  // 商品统计
+  statsProducts: () =>
+    fetchApi<{
+      total: number;
+      status_distribution: Record<string, number>;
+      category_distribution: Array<{ category: string; count: number }>;
+      top_products: Array<{ id: string; name: string; category: string; sales: number; revenue: number }>;
+      pending_reports: number;
+    }>('/api/v1/admin/stats/products'),
+
+  // 收入统计
+  statsRevenue: () =>
+    fetchApi<{
+      total_revenue: number;
+      this_month: number;
+      last_month: number;
+      today: number;
+      payment_methods: Array<{ method: string; amount: number; percentage: number }>;
+      daily_trend: number[];
+    }>('/api/v1/admin/stats/revenue'),
+
+  // 管理员订单列表
+  listOrders: (params: { page?: number; limit?: number; status?: string; search?: string } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.page) qs.set('page', String(params.page));
+    if (params.limit) qs.set('limit', String(params.limit));
+    if (params.status) qs.set('status', params.status);
+    if (params.search) qs.set('search', params.search);
+    return fetchApi<{
+      data: Array<{
+        id: string;
+        orderNo: string;
+        user: string;
+        userId: string;
+        amount: number;
+        status: string;
+        type: string;
+        paymentMethod: string;
+        createdAt: string;
+      }>;
+      total: number;
+      page: number;
+      limit: number;
+    }>(`/api/v1/admin/orders?${qs.toString()}`);
+  },
+
+  // 用户列表
+  listUsers: (params: { page?: number; limit?: number; role?: string } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.page) qs.set('page', String(params.page));
+    if (params.limit) qs.set('limit', String(params.limit));
+    if (params.role) qs.set('role', params.role);
+    return fetchApi<{
+      data: Array<Record<string, unknown>>;
+      total: number;
+      page: number;
+      limit: number;
+    }>(`/api/v1/users/admin/list?${qs.toString()}`);
+  },
+
+  // 商品审核
+  reviewProduct: (data: { product_id: string; status: string; review_note?: string }) =>
+    fetchApi<{ success: boolean; product_id: string; status: string }>('/api/v1/products/review', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  // 批量审核
+  batchReviewProducts: (data: { product_ids: string[]; status: string; review_note?: string }) =>
+    fetchApi('/api/v1/products/batch-review', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  // 待审核商品列表
+  getPendingProducts: (params: { page?: number; limit?: number; category?: string } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.page) qs.set('page', String(params.page));
+    if (params.limit) qs.set('limit', String(params.limit));
+    if (params.category) qs.set('category', params.category);
+    return fetchApi<{
+      data: Array<Record<string, unknown>>;
+      total: number;
+      page: number;
+      limit: number;
+    }>(`/api/v1/products/pending?${qs.toString()}`);
+  },
+
+  // 获取系统设置
+  getSettings: () =>
+    fetchApi<{ success: boolean; data: Record<string, Record<string, unknown>> }>('/api/v1/admin/settings'),
+
+  // 更新系统设置
+  updateSettings: (category: string, settings: Record<string, unknown>) =>
+    fetchApi<{ success: boolean; category: string }>('/api/v1/admin/settings', {
+      method: 'PUT',
+      body: JSON.stringify({ category, settings }),
+    }),
+
+  // 角色管理
+  listRoles: () =>
+    fetchApi<{ roles: { objectId: string; name: string; label: string; description: string; permissions: string[]; userCount: number; createdAt: string }[] }>('/api/v1/admin/roles'),
+
+  updateRole: (roleId: string, permissions: string[]) =>
+    fetchApi<{ success: boolean }>(`/api/v1/admin/roles/${roleId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ permissions }),
+    }),
+
+  createRole: (data: { name: string; label: string; description?: string; permissions?: string[] }) =>
+    fetchApi<{ success: boolean; objectId: string }>('/api/v1/admin/roles', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  deleteRole: (roleId: string) =>
+    fetchApi<{ success: boolean }>(`/api/v1/admin/roles/${roleId}`, {
+      method: 'DELETE',
+    }),
+
+  // 券码管理
+  listCoupons: () =>
+    fetchApi<{ coupons: Array<{ id: string; code: string; type: string; value: number; minAmount?: number; scope: string; scopeDetail?: string; startDate: string; endDate: string; totalCount: number; usedCount: number; status: string; createdAt: string }> }>('/api/v1/admin/coupons'),
+
+  createCoupon: (data: { code: string; type: string; value: number; min_amount?: number; scope?: string; scope_detail?: string; start_date: string; end_date: string; total_count?: number }) =>
+    fetchApi<{ success: boolean; id: string }>('/api/v1/admin/coupons', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  deleteCoupon: (couponId: string) =>
+    fetchApi<{ success: boolean }>(`/api/v1/admin/coupons/${couponId}`, { method: 'DELETE' }),
+
+  updateCouponStatus: (couponId: string, status: string) =>
+    fetchApi<{ success: boolean }>(`/api/v1/admin/coupons/${couponId}/status?status=${status}`, { method: 'PUT' }),
+
+  // 促销管理
+  listPromotions: () =>
+    fetchApi<{ promotions: Array<{ id: string; name: string; type: string; status: string; discount?: number; minAmount?: number; giftProduct?: string; startDate: string; endDate: string; productCount: number; orderCount: number; revenue: number; createdAt: string }> }>('/api/v1/admin/promotions'),
+
+  createPromotion: (data: { name: string; type: string; discount?: number; min_amount?: number; gift_product?: string; start_date: string; end_date: string }) =>
+    fetchApi<{ success: boolean; id: string }>('/api/v1/admin/promotions', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  updatePromotionStatus: (promoId: string, status: string) =>
+    fetchApi<{ success: boolean }>(`/api/v1/admin/promotions/${promoId}/status?status=${status}`, { method: 'PUT' }),
+
+  deletePromotion: (promoId: string) =>
+    fetchApi<{ success: boolean }>(`/api/v1/admin/promotions/${promoId}`, { method: 'DELETE' }),
+
+  // 充值管理
+  listRechargeRecords: (params: { page?: number; limit?: number } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.page) qs.set('page', String(params.page));
+    if (params.limit) qs.set('limit', String(params.limit));
+    return fetchApi<{ records: Array<{ id: string; userId: string; username: string; amount: number; bonus: number; method: string; status: string; createdAt: string }>; total: number }>(`/api/v1/admin/recharge/records?${qs.toString()}`);
+  },
+
+  listRechargePlans: () =>
+    fetchApi<{ plans: Array<{ id: string; amount: number; bonus: number; enabled: boolean }> }>('/api/v1/admin/recharge/plans'),
+
+  createRechargePlan: (data: { amount: number; bonus: number; enabled?: boolean }) =>
+    fetchApi<{ success: boolean; id: string }>('/api/v1/admin/recharge/plans', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  updateRechargePlan: (planId: string, data: { amount: number; bonus: number; enabled: boolean }) =>
+    fetchApi<{ success: boolean }>(`/api/v1/admin/recharge/plans/${planId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  // 账户明细
+  listAccountRecords: (params: { page?: number; limit?: number } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.page) qs.set('page', String(params.page));
+    if (params.limit) qs.set('limit', String(params.limit));
+    return fetchApi<{ records: Array<{ id: string; type: string; category: string; amount: number; balance: number; description: string; relatedOrderNo?: string; createdAt: string }>; total: number }>(`/api/v1/admin/accounts/records?${qs.toString()}`);
+  },
+
+  accountSummary: () =>
+    fetchApi<{ balance: number; totalIncome: number; totalExpense: number }>('/api/v1/admin/accounts/summary'),
 };
 
 export default {
@@ -487,4 +695,5 @@ export default {
   member: memberApi,
   wallet: walletApi,
   storage: storageApi,
+  admin: adminApi,
 };

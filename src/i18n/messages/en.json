@@ -72,7 +72,13 @@
     "reviews": "Reviews",
     "writeReview": "Write Review",
     "price": "Price",
-    "sales": "Sales"
+    "sales": "Sales",
+    "catImage": "Image",
+    "catAudio": "Audio",
+    "catVideo": "Video",
+    "catComic": "Comic",
+    "catMusic": "Music",
+    "catDigitalHuman": "Digital Human"
   },
   "user": {
     "login": "Login",

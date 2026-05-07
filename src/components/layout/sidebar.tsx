@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -18,14 +19,23 @@ import {
   MoreHorizontal,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   Image,
   Music,
+  Music2,
   Video,
   Mic,
   Bot,
   Palette,
   Workflow,
   ListTodo,
+  FileText,
+  Shield,
+  HelpCircle,
+  Users,
+  Info,
+  BookImage,
 } from 'lucide-react';
 
 const mainNavItems = [
@@ -48,7 +58,18 @@ const mainNavItems = [
   { href: '/assets', icon: Package, labelKey: 'nav.aiAssets' },
   { href: '/market', icon: ShoppingBag, labelKey: 'nav.aiMarket' },
   { href: '/invite', icon: Gift, labelKey: 'nav.invite' },
-  { href: '/more', icon: MoreHorizontal, labelKey: 'nav.more' },
+  {
+    href: '/more',
+    icon: MoreHorizontal,
+    labelKey: 'nav.more',
+    children: [
+      { href: '/more/user-agreement', icon: FileText, labelKey: 'more.userAgreement' },
+      { href: '/more/privacy-policy', icon: Shield, labelKey: 'more.privacyPolicy' },
+      { href: '/more/faq', icon: HelpCircle, labelKey: 'more.faq' },
+      { href: '/more/join-us', icon: Users, labelKey: 'more.joinUs' },
+      { href: '/more/about', icon: Info, labelKey: 'more.about' },
+    ],
+  },
 ];
 
 export function Sidebar() {
@@ -56,11 +77,57 @@ export function Sidebar() {
   const t = useTranslations();
   const { sidebarCollapsed, toggleSidebar } = useUIStore();
 
+  // 管理展开的菜单项
+  const [expandedMenus, setExpandedMenus] = useState<Set<string>>(new Set());
+
   const isActive = (href: string) => {
     if (href === '/') {
       return pathname === '/';
     }
-    return pathname.startsWith(href);
+    // 对于带query参数的链接，只比较路径部分
+    const basePath = href.split('?')[0];
+    return pathname.startsWith(basePath);
+  };
+
+  // 当路由匹配时自动展开对应的父菜单
+  useEffect(() => {
+    mainNavItems.forEach((item) => {
+      if (item.children && isActive(item.href)) {
+        setExpandedMenus((prev) => {
+          const next = new Set(prev);
+          next.add(item.href);
+          return next;
+        });
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname]);
+
+  const toggleExpand = (href: string) => {
+    setExpandedMenus((prev) => {
+      const next = new Set(prev);
+      if (next.has(href)) {
+        next.delete(href);
+      } else {
+        next.add(href);
+      }
+      return next;
+    });
+  };
+
+  const isChildActive = (childHref: string) => {
+    // 对于带 query 参数的子菜单，检查当前 URL 是否匹配
+    if (childHref.includes('?')) {
+      const url = new URL(childHref, 'http://localhost');
+      const childPath = url.pathname;
+      const childCategory = url.searchParams.get('category');
+      if (pathname === childPath && typeof window !== 'undefined') {
+        const currentParams = new URLSearchParams(window.location.search);
+        return currentParams.get('category') === childCategory;
+      }
+      return false;
+    }
+    return pathname === childHref;
   };
 
   return (
@@ -94,6 +161,8 @@ export function Sidebar() {
             {mainNavItems.map((item) => {
               const Icon = item.icon;
               const active = isActive(item.href);
+              const hasChildren = !!item.children;
+              const isExpanded = expandedMenus.has(item.href);
 
               if (sidebarCollapsed) {
                 return (
@@ -118,20 +187,36 @@ export function Sidebar() {
 
               return (
                 <div key={item.href}>
-                  <Link href={item.href}>
+                  {hasChildren ? (
                     <Button
                       variant={active ? 'secondary' : 'ghost'}
                       className="w-full justify-start gap-3"
+                      onClick={() => toggleExpand(item.href)}
                     >
                       <Icon className="h-5 w-5" />
-                      {t(item.labelKey)}
+                      <span className="flex-1 text-left">{t(item.labelKey)}</span>
+                      {isExpanded ? (
+                        <ChevronUp className="h-4 w-4" />
+                      ) : (
+                        <ChevronDown className="h-4 w-4" />
+                      )}
                     </Button>
-                  </Link>
-                  {item.children && active && (
+                  ) : (
+                    <Link href={item.href}>
+                      <Button
+                        variant={active ? 'secondary' : 'ghost'}
+                        className="w-full justify-start gap-3"
+                      >
+                        <Icon className="h-5 w-5" />
+                        {t(item.labelKey)}
+                      </Button>
+                    </Link>
+                  )}
+                  {hasChildren && isExpanded && (
                     <div className="ml-4 mt-1 space-y-1 border-l pl-4">
-                      {item.children.map((child) => {
+                      {item.children!.map((child) => {
                         const ChildIcon = child.icon;
-                        const childActive = pathname === child.href;
+                        const childActive = isChildActive(child.href);
                         return (
                           <Link key={child.href} href={child.href}>
                             <Button

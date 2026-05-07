@@ -127,14 +127,11 @@ export default function ImageGenerationPage() {
       const token = user.jwtToken;
       if (!token) throw new Error('未登录');
 
-      const presign = await storageApi.presignUpload(
-        {
-          filename: referenceFile.name,
-          content_type: referenceFile.type || 'image/jpeg',
-          prefix: 'images',
-        },
-        token
-      );
+      const presign = await storageApi.presignUpload({
+        filename: referenceFile.name,
+        content_type: referenceFile.type || 'image/jpeg',
+        prefix: 'images',
+      });
       const uploadUrl = presign.upload_url;
       const fileUrl = presign.file_url;
       

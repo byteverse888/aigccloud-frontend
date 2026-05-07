@@ -52,7 +52,7 @@ export interface TaskResult {
 
 // Product Types
 export type ProductStatus = 'draft' | 'pending' | 'approved' | 'rejected' | 'offline';
-export type ProductCategory = 'image' | 'audio' | 'video' | 'model' | 'other';
+export type ProductCategory = 'image' | 'audio' | 'video' | 'model' | 'comic' | 'music' | 'digital-human' | 'other';
 
 export interface Product {
   objectId: string;

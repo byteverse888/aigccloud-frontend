@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Wallet, ArrowLeft, TrendingUp, DollarSign, ArrowUpRight, ArrowDownRight, Loader2, CreditCard, Building2 } from 'lucide-react';
+import { Wallet, ArrowLeft, TrendingUp, DollarSign, ArrowUpRight, ArrowDownRight, Loader2, CreditCard, Building2, Package, Eye, Star, Users } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,7 +23,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useAuthStore } from '@/store';
-import { getUserEarnings, getUserEarningStats, createWithdrawRequest, EarningRecord } from '@/lib/parse-actions';
+import { getUserEarnings, getUserEarningStats, createWithdrawRequest, EarningRecord, getUserProducts } from '@/lib/parse-actions';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
 
@@ -38,6 +38,12 @@ export default function EarningsPage() {
   });
   const [earningsHistory, setEarningsHistory] = useState<EarningRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [creatorStats, setCreatorStats] = useState({
+    totalProducts: 0,
+    totalSales: 0,
+    totalViews: 0,
+    avgRating: 0,
+  });
   
   // 提现对话框状态
   const [withdrawDialogOpen, setWithdrawDialogOpen] = useState(false);
@@ -68,6 +74,26 @@ export default function EarningsPage() {
       }
       if (historyResult.success) {
         setEarningsHistory(historyResult.data);
+      }
+
+      // 加载创作者作品统计
+      if (user.web3Address) {
+        const productsResult = await getUserProducts(user.web3Address, { limit: 1000 });
+        if (productsResult.success && productsResult.data) {
+          const products = productsResult.data;
+          const totalSales = products.reduce((sum, p) => sum + (p.sales || 0), 0);
+          const totalViews = products.reduce((sum, p) => sum + (p.views || 0), 0);
+          const ratedProducts = products.filter(p => p.rating && p.rating > 0);
+          const avgRating = ratedProducts.length > 0
+            ? ratedProducts.reduce((sum, p) => sum + (p.rating || 0), 0) / ratedProducts.length
+            : 0;
+          setCreatorStats({
+            totalProducts: products.length,
+            totalSales,
+            totalViews,
+            avgRating: Math.round(avgRating * 10) / 10,
+          });
+        }
       }
     } catch (error) {
       toast.error('加载收益数据失败');
@@ -215,6 +241,46 @@ export default function EarningsPage() {
               <Button className="w-full mt-4" size="sm" onClick={() => setWithdrawDialogOpen(true)}>
                 申请提现
               </Button>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* 创作者数据看板 */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <Card>
+            <CardContent className="p-4 flex items-center gap-3">
+              <Package className="h-8 w-8 text-blue-500" />
+              <div>
+                <p className="text-xl font-bold">{creatorStats.totalProducts}</p>
+                <p className="text-xs text-muted-foreground">我的作品</p>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4 flex items-center gap-3">
+              <TrendingUp className="h-8 w-8 text-green-500" />
+              <div>
+                <p className="text-xl font-bold">{creatorStats.totalSales}</p>
+                <p className="text-xs text-muted-foreground">总销量</p>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4 flex items-center gap-3">
+              <Eye className="h-8 w-8 text-purple-500" />
+              <div>
+                <p className="text-xl font-bold">{creatorStats.totalViews}</p>
+                <p className="text-xs text-muted-foreground">总浏览</p>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4 flex items-center gap-3">
+              <Star className="h-8 w-8 text-yellow-500" />
+              <div>
+                <p className="text-xl font-bold">{creatorStats.avgRating || '-'}</p>
+                <p className="text-xs text-muted-foreground">平均评分</p>
+              </div>
             </CardContent>
           </Card>
         </div>

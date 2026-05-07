@@ -29,6 +29,8 @@ import {
   LogOut,
   Wallet,
   Crown,
+  Shield,
+  Megaphone,
 } from 'lucide-react';
 
 export function Header() {
@@ -161,6 +163,28 @@ export function Header() {
                 </Link>
               </DropdownMenuItem>
             </DropdownMenuGroup>
+            {/* 管理入口 - 根据角色显示 */}
+            {(user.role === 'admin' || user.role === 'operator') && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuGroup>
+                  {user.role === 'admin' && (
+                    <DropdownMenuItem asChild>
+                      <Link href="/admin">
+                        <Shield className="mr-2 h-4 w-4" />
+                        管理后台
+                      </Link>
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuItem asChild>
+                    <Link href="/operator">
+                      <Megaphone className="mr-2 h-4 w-4" />
+                      运营后台
+                    </Link>
+                  </DropdownMenuItem>
+                </DropdownMenuGroup>
+              </>
+            )}
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleLogout}>
               <LogOut className="mr-2 h-4 w-4" />

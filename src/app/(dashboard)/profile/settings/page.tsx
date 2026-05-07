@@ -170,8 +170,7 @@ export default function SettingsPage() {
       // 2. 保存到后端（使用 JWT token 作为认证）
       const saveResult = await walletApi.createWallet(
         result.address,
-        result.encryptedKeystore,
-        user.jwtToken
+        result.encryptedKeystore
       );
       
       if (saveResult.success) {
@@ -230,8 +229,7 @@ ${result.mnemonic}
       // 2. 保存到后端（使用 JWT token）
       const saveResult = await walletApi.importWallet(
         result.address,
-        result.encryptedKeystore,
-        user.jwtToken
+        result.encryptedKeystore
       );
       
       if (saveResult.success) {
@@ -258,7 +256,7 @@ ${result.mnemonic}
     
     setIsUnbinding(true);
     try {
-      const result = await walletApi.unbindWallet(user.jwtToken);
+      const result = await walletApi.unbindWallet();
       
       if (result.success) {
         // 清除本地状态

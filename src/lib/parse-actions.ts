@@ -7,6 +7,7 @@
 const PARSE_SERVER_URL = process.env.PARSE_SERVER_URL || 'http://localhost:1337/parse';
 const PARSE_APP_ID = process.env.PARSE_APP_ID || process.env.NEXT_PUBLIC_PARSE_APP_ID || 'aigccloud';
 const PARSE_REST_API_KEY = process.env.PARSE_REST_API_KEY || 'restapi_service_key';
+const PARSE_MASTER_KEY = process.env.PARSE_MASTER_KEY || '';
 
 // ============ 错误信息翻译 ============
 
@@ -44,6 +45,10 @@ async function parseRequest(
     'X-Parse-Application-Id': PARSE_APP_ID,
     'X-Parse-REST-API-Key': PARSE_REST_API_KEY,
   };
+  // 写操作使用 Master Key（Server Action 运行在服务端，安全）
+  if (method !== 'GET' && PARSE_MASTER_KEY) {
+    headers['X-Parse-Master-Key'] = PARSE_MASTER_KEY;
+  }
   if (sessionToken) headers['X-Parse-Session-Token'] = sessionToken;
 
   const url = `${PARSE_SERVER_URL}${endpoint}`;
@@ -425,7 +430,43 @@ export async function getUserFavorites(userId: string, page = 1, limit = 20) {
 }
 
 export async function getUserFollowing(userId: string, page = 1, limit = 20) {
-  return paginatedQuery('Follow', { followerId: userId }, page, limit);
+  try {
+    const followResult = await paginatedQuery<{ objectId: string; followerId: string; followingId: string }>('Follow', { followerId: userId }, page, limit);
+    if (!followResult.success || !followResult.data || followResult.data.length === 0) {
+      return followResult;
+    }
+
+    // 获取所有关注用户的ID
+    const followingIds = followResult.data.map(f => f.followingId);
+    
+    // 批量查询用户信息
+    const usersResult = await queryObjects('_User', {
+      where: { objectId: { $in: followingIds } },
+      limit: followingIds.length,
+    });
+    
+    // 创建用户映射
+    const userMap = new Map<string, { objectId: string; username: string; avatar?: string; bio?: string; level?: number }>();
+    if (usersResult.data) {
+      for (const u of usersResult.data) {
+        userMap.set(u.objectId, { objectId: u.objectId, username: u.username, avatar: u.avatar, bio: u.bio, level: u.level });
+      }
+    }
+    
+    // 合并数据
+    const dataWithUsers = followResult.data.map(follow => ({
+      ...follow,
+      followingUser: userMap.get(follow.followingId) || null,
+    }));
+    
+    return {
+      ...followResult,
+      data: dataWithUsers,
+    };
+  } catch (error) {
+    console.error('[getUserFollowing] 查询失败:', error);
+    return { success: false, error: (error as Error).message, data: [], total: 0 };
+  }
 }
 
 export async function getUserFollowers(userId: string, page = 1, limit = 20) {
@@ -485,6 +526,63 @@ export async function deleteComment(commentId: string, productId: string) {
   }
 }
 
+// ============ 评分 ============
+
+export interface ProductRating {
+  objectId: string;
+  productId: string;
+  userId: string;
+  rating: number; // 1-5
+  createdAt: string;
+}
+
+export async function rateProduct(productId: string, userId: string, rating: number) {
+  try {
+    // 检查是否已评分
+    const existing = await queryObjects('ProductRating', {
+      where: { productId, userId },
+      limit: 1,
+    });
+    if (existing.data && existing.data.length > 0) {
+      // 更新已有评分
+      await parseRequest(`/classes/ProductRating/${existing.data[0].objectId}`, 'PUT', { rating });
+    } else {
+      // 创建新评分
+      await parseRequest('/classes/ProductRating', 'POST', { productId, userId, rating });
+    }
+    // 计算平均分并更新 Product
+    const allRatings = await queryObjects('ProductRating', {
+      where: { productId },
+      limit: 1000,
+    });
+    if (allRatings.data && allRatings.data.length > 0) {
+      const avg = allRatings.data.reduce((sum: number, r: Record<string, unknown>) => sum + (r.rating as number), 0) / allRatings.data.length;
+      await parseRequest(`/classes/Product/${productId}`, 'PUT', {
+        rating: Math.round(avg * 10) / 10,
+        ratingCount: allRatings.data.length,
+      });
+    }
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: (error as Error).message };
+  }
+}
+
+export async function getUserRating(productId: string, userId: string): Promise<number | null> {
+  try {
+    const res = await queryObjects('ProductRating', {
+      where: { productId, userId },
+      limit: 1,
+    });
+    if (res.data && res.data.length > 0) {
+      return res.data[0].rating as number;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 // ============ 商品 ============
 
 export interface Product {
@@ -510,6 +608,13 @@ export interface Product {
   mockType?: string;
   mockOwner?: string;
   tags?: string[];
+  previewUrl?: string;
+  fileUrl?: string; // 实际文件下载地址（购买后可见）
+  fileSize?: number; // 文件大小（字节）
+  fileFormat?: string; // 文件格式（png/mp3/mp4等）
+  duration?: number; // 音视频时长（秒）
+  dimensions?: string; // 图片尺寸（如 "1920x1080"）
+  ratingCount?: number; // 评分人数
   createdAt: string;
   updatedAt?: string;
 }
@@ -563,7 +668,16 @@ export async function updateAIIPAssetStatus(assetId: string, status: AIIPAsset['
 }
 
 // 删除AIIP资产
-export async function deleteAIIPAsset(assetId: string) {
+export async function deleteAIIPAsset(assetId: string, ownerKey?: string) {
+  // 验证所有权：只能删除自己的资产
+  if (ownerKey) {
+    const asset = await queryObjects('AIIPAsset', { where: { objectId: assetId }, limit: 1 });
+    const data = asset.data?.[0];
+    if (!data) return { success: false, error: '资产不存在' };
+    if (data.ownerAddress !== ownerKey && data.ownerId !== ownerKey) {
+      return { success: false, error: '无权删除他人的资产' };
+    }
+  }
   return deleteObject('AIIPAsset', assetId);
 }
 
@@ -687,7 +801,7 @@ export async function clearMockProducts() {
 // 为当前用户创建AIIP资产模拟数据
 export async function initUserAIIPAssets(userId: string, userAddress: string, userName: string) {
   if (!userAddress) {
-    return { success: false, error: '请先登录Web3账户' };
+    return { success: false, error: '请先登录' };
   }
 
   const mockAssets = [
@@ -732,7 +846,7 @@ export async function initUserAIIPAssets(userId: string, userAddress: string, us
 // 清空当前用户的AIIP资产模拟数据
 export async function clearUserAIIPAssets(userAddress: string) {
   if (!userAddress) {
-    return { success: false, error: '请先登录Web3账户' };
+    return { success: false, error: '请先登录' };
   }
   try {
     // 只清除当前用户创建的AIIP模拟数据
@@ -757,7 +871,7 @@ export async function clearUserAIIPAssets(userAddress: string) {
 // 为商城创建模拟商品数据（供购买测试）
 export async function initMarketMockProducts(userAddress: string) {
   if (!userAddress) {
-    return { success: false, error: '请先登录Web3账户' };
+    return { success: false, error: '请先登录' };
   }
 
   const mockProducts = [
@@ -804,7 +918,7 @@ export async function initMarketMockProducts(userAddress: string) {
 // 清空当前用户创建的商城模拟数据
 export async function clearMarketMockProducts(userAddress: string) {
   if (!userAddress) {
-    return { success: false, error: '请先登录Web3账户' };
+    return { success: false, error: '请先登录' };
   }
   try {
     // 只清除当前用户创建的商城模拟数据
@@ -944,6 +1058,9 @@ export interface Order {
   productId: string;
   productName: string;
   productImage?: string;
+  productCover?: string;
+  productCategory?: string;
+  productFileUrl?: string; // 商品文件下载地址
   type: 'purchase' | 'subscription' | 'recharge';
   amount: number;
   status: 'pending' | 'paid' | 'payment_failed' | 'completed' | 'cancelled' | 'refunded';

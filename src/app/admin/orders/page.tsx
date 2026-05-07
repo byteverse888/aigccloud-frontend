@@ -11,26 +11,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Search, Eye, ChevronLeft, ChevronRight } from 'lucide-react';
-import { useState } from 'react';
+import { Search, Eye, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { adminApi } from '@/lib/api';
 
 interface Order {
-  id: string;
-  orderNo: string;
-  user: string;
+  objectId: string;
+  order_no: string;
+  user_id: string;
+  username?: string;
   amount: number;
-  status: 'pending' | 'paid' | 'completed' | 'cancelled' | 'refunded';
-  paymentMethod: string;
+  status: string;
+  payment_method?: string;
   createdAt: string;
+  product_name?: string;
 }
-
-const mockOrders: Order[] = [
-  { id: '1', orderNo: 'ORD20240115001', user: 'user1', amount: 299, status: 'completed', paymentMethod: '微信支付', createdAt: '2024-01-15 10:30' },
-  { id: '2', orderNo: 'ORD20240115002', user: 'user2', amount: 99, status: 'paid', paymentMethod: '支付宝', createdAt: '2024-01-15 09:20' },
-  { id: '3', orderNo: 'ORD20240114001', user: 'user3', amount: 499, status: 'pending', paymentMethod: '-', createdAt: '2024-01-14 16:45' },
-  { id: '4', orderNo: 'ORD20240114002', user: 'user4', amount: 199, status: 'cancelled', paymentMethod: '-', createdAt: '2024-01-14 15:30' },
-  { id: '5', orderNo: 'ORD20240113001', user: 'user5', amount: 149, status: 'refunded', paymentMethod: '微信支付', createdAt: '2024-01-13 11:20' },
-];
 
 const statusColors: Record<string, 'default' | 'success' | 'warning' | 'destructive' | 'secondary'> = {
   pending: 'warning',
@@ -51,12 +46,38 @@ const statusLabels: Record<string, string> = {
 export default function AdminOrdersPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const pageSize = 20;
 
-  const filteredOrders = mockOrders.filter((order) => {
-    if (statusFilter !== 'all' && order.status !== statusFilter) return false;
-    if (searchQuery && !order.orderNo.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-    return true;
-  });
+  const fetchOrders = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params: Record<string, string | number> = { page, page_size: pageSize };
+      if (statusFilter !== 'all') params.status = statusFilter;
+      if (searchQuery.trim()) params.search = searchQuery.trim();
+      const res = await adminApi.listOrders(params);
+      setOrders(res.data || []);
+      setTotal(res.total || 0);
+    } catch (err) {
+      console.error('Failed to fetch orders:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [page, statusFilter, searchQuery]);
+
+  useEffect(() => {
+    fetchOrders();
+  }, [fetchOrders]);
+
+  // 搜索防抖：重置到第一页
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery, statusFilter]);
+
+  const totalPages = Math.ceil(total / pageSize);
 
   return (
     <div className="space-y-6">
@@ -96,59 +117,83 @@ export default function AdminOrdersPage() {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="rounded-md border">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b bg-muted/50">
-                  <th className="p-3 text-left text-sm font-medium">订单号</th>
-                  <th className="p-3 text-left text-sm font-medium">用户</th>
-                  <th className="p-3 text-left text-sm font-medium">金额</th>
-                  <th className="p-3 text-left text-sm font-medium">状态</th>
-                  <th className="p-3 text-left text-sm font-medium">支付方式</th>
-                  <th className="p-3 text-left text-sm font-medium">创建时间</th>
-                  <th className="p-3 text-left text-sm font-medium">操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredOrders.map((order) => (
-                  <tr key={order.id} className="border-b">
-                    <td className="p-3 text-sm font-mono">{order.orderNo}</td>
-                    <td className="p-3 text-sm">{order.user}</td>
-                    <td className="p-3 text-sm font-bold">¥{order.amount}</td>
-                    <td className="p-3 text-sm">
-                      <Badge variant={statusColors[order.status]}>
-                        {statusLabels[order.status]}
-                      </Badge>
-                    </td>
-                    <td className="p-3 text-sm">{order.paymentMethod}</td>
-                    <td className="p-3 text-sm">{order.createdAt}</td>
-                    <td className="p-3 text-sm">
-                      <Button variant="ghost" size="sm">
-                        <Eye className="mr-1 h-4 w-4" />
-                        详情
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="mt-4 flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">
-              共 {filteredOrders.length} 条记录
-            </p>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm">
-                <ChevronLeft className="h-4 w-4" />
-                上一页
-              </Button>
-              <Button variant="outline" size="sm">
-                下一页
-                <ChevronRight className="h-4 w-4" />
-              </Button>
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
-          </div>
+          ) : orders.length === 0 ? (
+            <div className="py-12 text-center text-muted-foreground">暂无订单数据</div>
+          ) : (
+            <>
+              <div className="rounded-md border">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b bg-muted/50">
+                      <th className="p-3 text-left text-sm font-medium">订单号</th>
+                      <th className="p-3 text-left text-sm font-medium">用户</th>
+                      <th className="p-3 text-left text-sm font-medium">商品</th>
+                      <th className="p-3 text-left text-sm font-medium">金额</th>
+                      <th className="p-3 text-left text-sm font-medium">状态</th>
+                      <th className="p-3 text-left text-sm font-medium">支付方式</th>
+                      <th className="p-3 text-left text-sm font-medium">创建时间</th>
+                      <th className="p-3 text-left text-sm font-medium">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {orders.map((order) => (
+                      <tr key={order.objectId} className="border-b">
+                        <td className="p-3 text-sm font-mono">{order.order_no}</td>
+                        <td className="p-3 text-sm">{order.username || order.user_id}</td>
+                        <td className="p-3 text-sm">{order.product_name || '-'}</td>
+                        <td className="p-3 text-sm font-bold">¥{order.amount}</td>
+                        <td className="p-3 text-sm">
+                          <Badge variant={statusColors[order.status] || 'default'}>
+                            {statusLabels[order.status] || order.status}
+                          </Badge>
+                        </td>
+                        <td className="p-3 text-sm">{order.payment_method || '-'}</td>
+                        <td className="p-3 text-sm">
+                          {new Date(order.createdAt).toLocaleString('zh-CN')}
+                        </td>
+                        <td className="p-3 text-sm">
+                          <Button variant="ghost" size="sm">
+                            <Eye className="mr-1 h-4 w-4" />
+                            详情
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="mt-4 flex items-center justify-between">
+                <p className="text-sm text-muted-foreground">
+                  共 {total} 条记录，第 {page}/{totalPages || 1} 页
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={page <= 1}
+                    onClick={() => setPage((p) => p - 1)}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    上一页
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={page >= totalPages}
+                    onClick={() => setPage((p) => p + 1)}
+                  >
+                    下一页
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
     </div>

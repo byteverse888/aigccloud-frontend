@@ -72,7 +72,13 @@
     "reviews": "评价",
     "writeReview": "写评价",
     "price": "价格",
-    "sales": "销量"
+    "sales": "销量",
+    "catImage": "图片",
+    "catAudio": "音频",
+    "catVideo": "视频",
+    "catComic": "图文漫画",
+    "catMusic": "音乐",
+    "catDigitalHuman": "数字人"
   },
   "user": {
     "login": "登录",
