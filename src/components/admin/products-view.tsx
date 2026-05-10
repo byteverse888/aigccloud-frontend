@@ -30,7 +30,7 @@ import {
   ChevronRight,
   Search,
 } from 'lucide-react';
-import { adminApi } from '@/lib/api';
+import { adminApi, productsApi } from '@/lib/api';
 import toast from 'react-hot-toast';
 import { CopyableCell } from '@/components/admin/copyable-cell';
 
@@ -100,6 +100,19 @@ export function ProductsView({
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailProduct, setDetailProduct] = useState<Product | null>(null);
+  const [reportDetails, setReportDetails] = useState<
+    Array<{
+      id: string;
+      reporterId: string;
+      reporterName: string;
+      reason: string;
+      reasonText: string;
+      description: string;
+      status: string;
+      createdAt: string;
+    }>
+  >([]);
+  const [reportDetailsLoading, setReportDetailsLoading] = useState(false);
   const [creatorIdInput, setCreatorIdInput] = useState('');
   const [creatorId, setCreatorId] = useState('');
   const [keywordInput, setKeywordInput] = useState('');
@@ -242,9 +255,21 @@ export function ProductsView({
     setRejectDialogOpen(true);
   };
 
-  const openDetail = (product: Product) => {
+  const openDetail = async (product: Product) => {
     setDetailProduct(product);
     setDetailOpen(true);
+    setReportDetails([]);
+    if ((product.reportCount ?? 0) > 0) {
+      setReportDetailsLoading(true);
+      try {
+        const res = await productsApi.getReports(product.objectId, { page: 1, limit: 50 });
+        setReportDetails(res?.data || []);
+      } catch {
+        // 静默失败，不影响详情展示
+      } finally {
+        setReportDetailsLoading(false);
+      }
+    }
   };
 
   const isOfflineAction =
@@ -611,7 +636,7 @@ export function ProductsView({
                           </div>
                         </td>
                         <td className="px-3 py-3 text-sm whitespace-nowrap font-medium">
-                          ¥{product.price}
+                          {product.price} 积分
                         </td>
                         <td className="px-3 py-3 text-sm whitespace-nowrap">
                           {statusBadge(product.status)}
@@ -779,7 +804,7 @@ export function ProductsView({
                   </div>
                   <div>
                     <Label className="text-muted-foreground">价格</Label>
-                    <p className="mt-1 font-medium">¥{detailProduct.price}</p>
+                    <p className="mt-1 font-medium">{detailProduct.price} 积分</p>
                   </div>
                   <div>
                     <Label className="text-muted-foreground">创作者</Label>
@@ -816,6 +841,69 @@ export function ProductsView({
                     </p>
                   </div>
                 </div>
+                {(detailProduct.reportCount ?? 0) > 0 && (
+                  <div>
+                    <Label>投诉记录</Label>
+                    {reportDetailsLoading ? (
+                      <div className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        加载中...
+                      </div>
+                    ) : reportDetails.length === 0 ? (
+                      <p className="mt-2 text-sm text-muted-foreground">暂无投诉明细</p>
+                    ) : (
+                      <div className="mt-2 max-h-64 overflow-y-auto rounded-md border">
+                        <table className="w-full text-xs">
+                          <thead className="bg-muted/50 sticky top-0">
+                            <tr className="text-left">
+                              <th className="p-2 font-medium">投诉人</th>
+                              <th className="p-2 font-medium">原因</th>
+                              <th className="p-2 font-medium">描述</th>
+                              <th className="p-2 font-medium">状态</th>
+                              <th className="p-2 font-medium whitespace-nowrap">时间</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {reportDetails.map((r) => (
+                              <tr key={r.id} className="border-t">
+                                <td className="p-2 align-top">
+                                  <div className="font-medium">{r.reporterName || '-'}</div>
+                                  <div className="font-mono text-[10px] text-muted-foreground break-all">
+                                    {r.reporterId}
+                                  </div>
+                                </td>
+                                <td className="p-2 align-top whitespace-nowrap">
+                                  {r.reasonText || r.reason}
+                                </td>
+                                <td className="p-2 align-top break-all">{r.description || '-'}</td>
+                                <td className="p-2 align-top whitespace-nowrap">
+                                  <Badge
+                                    variant={
+                                      r.status === 'resolved'
+                                        ? 'default'
+                                        : r.status === 'rejected'
+                                          ? 'outline'
+                                          : 'secondary'
+                                    }
+                                  >
+                                    {r.status === 'resolved'
+                                      ? '已处理'
+                                      : r.status === 'rejected'
+                                        ? '已驳回'
+                                        : '待处理'}
+                                  </Badge>
+                                </td>
+                                <td className="p-2 align-top whitespace-nowrap text-muted-foreground">
+                                  {formatDate(r.createdAt)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                )}
                 {detailProduct.description && (
                   <div>
                     <Label>商品描述</Label>

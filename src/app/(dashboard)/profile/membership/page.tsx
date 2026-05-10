@@ -10,8 +10,7 @@ import { useAuthStore } from '@/store';
 import { memberApi } from '@/lib/api';
 import { Crown, History, CheckCircle, Clock, XCircle, Check, X, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
-// QR Code library - install: npm install qrcode.react
-// import { QRCodeSVG } from 'qrcode.react';
+import { QRCodeSVG } from 'qrcode.react';
 
 // 套餐信息类型
 interface PlanInfo {
@@ -629,15 +628,13 @@ export default function MembershipPage() {
               <div className="text-center space-y-4">
                 {payInfo?.codeUrl ? (
                   <>
-                    {/* QR Code - 安装 qrcode.react 后取消下面注释 */}
-                    {/* <QRCodeSVG value={payInfo.codeUrl} size={200} /> */}
-                    
-                    {/* 临时显示：安装 qrcode.react 后删除这部分 */}
-                    <div className="w-48 h-48 bg-muted rounded-lg flex items-center justify-center border-2 border-dashed">
-                      <div className="text-center text-sm text-muted-foreground p-4">
-                        <p className="mb-2">二维码区域</p>
-                        <p className="text-xs">安装 qrcode.react 后显示</p>
-                      </div>
+                    <div className="p-3 bg-white rounded-lg inline-block">
+                      <QRCodeSVG
+                        value={payInfo.codeUrl}
+                        size={200}
+                        level="M"
+                        includeMargin={false}
+                      />
                     </div>
                     
                     <p className="text-sm text-muted-foreground">请使用微信扫码支付</p>

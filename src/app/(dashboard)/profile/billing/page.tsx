@@ -13,6 +13,7 @@ import { getUserTransactions, Transaction } from '@/lib/parse-actions';
 import { paymentApi } from '@/lib/api';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
+import { QRCodeSVG } from 'qrcode.react';
 
 // 金币套餐
 const coinPackages = [
@@ -275,14 +276,13 @@ export default function BillingPage() {
               
               <div className="flex justify-center">
                 {paymentInfo.qrCode ? (
-                  <div className="p-4 bg-white rounded-lg">
-                    {/* 这里可以用 QRCode 组件渲染二维码 */}
-                    <div className="w-48 h-48 bg-muted flex items-center justify-center rounded">
-                      <div className="text-center text-muted-foreground">
-                        <QrCode className="h-16 w-16 mx-auto mb-2" />
-                        <p className="text-xs break-all px-2">{paymentInfo.qrCode}</p>
-                      </div>
-                    </div>
+                  <div className="p-3 bg-white rounded-lg">
+                    <QRCodeSVG
+                      value={paymentInfo.qrCode}
+                      size={192}
+                      level="M"
+                      includeMargin={false}
+                    />
                   </div>
                 ) : (
                   <div className="w-48 h-48 bg-muted flex items-center justify-center rounded">

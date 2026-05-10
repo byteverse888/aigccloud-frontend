@@ -4,10 +4,12 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { ArrowLeft, CreditCard, Wallet, Loader2, CheckCircle } from 'lucide-react';
+import { ArrowLeft, CreditCard, Wallet, Loader2, CheckCircle, Lock } from 'lucide-react';
 import { useCartStore, useAuthStore } from '@/store';
-import { assetsApi, incentiveApi } from '@/lib/api';
+import { assetsApi, incentiveApi, userApi } from '@/lib/api';
 import toast from 'react-hot-toast';
 import Link from 'next/link';
 
@@ -18,10 +20,12 @@ export default function CheckoutPage() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [balance, setBalance] = useState<number | null>(null);
   const [balanceLoading, setBalanceLoading] = useState(true);
+  const [hasPayPwd, setHasPayPwd] = useState<boolean | null>(null);
+  const [payPwd, setPayPwd] = useState('');
 
   const totalPrice = getTotalPrice();
 
-  // 拉取最新账户余额
+  // 拉取最新账户余额 + 支付密码状态
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -32,6 +36,14 @@ export default function CheckoutPage() {
         if (!cancelled) setBalance(Number(user?.totalIncentive || 0));
       } finally {
         if (!cancelled) setBalanceLoading(false);
+      }
+    })();
+    (async () => {
+      try {
+        const s = await userApi.getPaymentPasswordStatus();
+        if (!cancelled) setHasPayPwd(!!s.has_payment_password);
+      } catch {
+        if (!cancelled) setHasPayPwd(false);
       }
     })();
     return () => {
@@ -60,10 +72,19 @@ export default function CheckoutPage() {
       toast.error(`积分余额不足，需要 ${totalPrice} 积分，当前 ${balance}`);
       return;
     }
+    if (hasPayPwd === false) {
+      toast.error('请先在「个人设置 - 安全」设置支付密码');
+      router.push('/profile/settings?tab=security');
+      return;
+    }
+    if (!payPwd || payPwd.length < 6) {
+      toast.error('请输入 6 位以上支付密码');
+      return;
+    }
 
     setIsProcessing(true);
     try {
-      const res = await assetsApi.cart.checkoutWithBalance();
+      const res = await assetsApi.cart.checkoutWithBalance(payPwd);
       toast.success(res.message || '支付成功');
       // 同步更新本地余额展示与 auth store
       if (typeof res.balance_after === 'number') {
@@ -72,6 +93,7 @@ export default function CheckoutPage() {
           setUser({ ...user, totalIncentive: res.balance_after });
         }
       }
+      setPayPwd('');
       // 刷新购物车（后端已清空对应项）
       await fetchCart();
       setTimeout(() => {
@@ -165,6 +187,32 @@ export default function CheckoutPage() {
                   积分余额不足，还差 {totalPrice - (balance ?? 0)} 积分。可前往「充值」页面补充积分后再来支付。
                 </p>
               )}
+
+              {/* 支付密码 */}
+              <div className="mt-4 space-y-2">
+                <Label htmlFor="payPwd" className="flex items-center gap-2 text-sm">
+                  <Lock className="h-4 w-4" /> 支付密码
+                </Label>
+                {hasPayPwd === false ? (
+                  <div className="text-sm text-destructive">
+                    您尚未设置支付密码，
+                    <Link href="/profile/settings?tab=security" className="underline ml-1">
+                      前往设置
+                    </Link>
+                  </div>
+                ) : (
+                  <Input
+                    id="payPwd"
+                    type="password"
+                    autoComplete="off"
+                    placeholder="请输入支付密码"
+                    maxLength={32}
+                    value={payPwd}
+                    onChange={(e) => setPayPwd(e.target.value)}
+                    disabled={isProcessing || hasPayPwd === null}
+                  />
+                )}
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -194,7 +242,13 @@ export default function CheckoutPage() {
                 className="w-full"
                 size="lg"
                 onClick={handlePayment}
-                disabled={isProcessing || balanceLoading || insufficient}
+                disabled={
+                  isProcessing ||
+                  balanceLoading ||
+                  insufficient ||
+                  hasPayPwd === false ||
+                  (hasPayPwd === true && payPwd.length < 6)
+                }
               >
                 {isProcessing ? (
                   <>

@@ -33,7 +33,7 @@ import { useFileUpload } from '@/hooks/useFileUpload';
 import { useSignedUrl } from '@/hooks/useSignedUrl';
 import { getWalletBalance, getCoinBalance, getChainInfo } from '@/lib/web3-actions';
 import { generateWalletWithPassword, importFromPrivateKeyWithPassword, toChecksumAddress } from '@/lib/web3-client';
-import { walletApi } from '@/lib/api';
+import { walletApi, userApi } from '@/lib/api';
 import { CreateWalletDialog } from '@/components/wallet/CreateWalletDialog';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
@@ -76,6 +76,12 @@ export default function SettingsPage() {
   const [showUnbindConfirm, setShowUnbindConfirm] = useState(false);
   const [isUnbinding, setIsUnbinding] = useState(false);
   const [privateKeyInput, setPrivateKeyInput] = useState('');
+  // 支付密码相关
+  const [hasPayPwd, setHasPayPwd] = useState<boolean | null>(null);
+  const [payOldPwd, setPayOldPwd] = useState('');
+  const [payNewPwd, setPayNewPwd] = useState('');
+  const [payConfirmPwd, setPayConfirmPwd] = useState('');
+  const [paySubmitting, setPaySubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // 头像上传
@@ -340,6 +346,46 @@ ${result.mnemonic}
       });
     }
   }, [user, profileForm]);
+
+  // 加载支付密码状态
+  useEffect(() => {
+    (async () => {
+      try {
+        const s = await userApi.getPaymentPasswordStatus();
+        setHasPayPwd(!!s.has_payment_password);
+      } catch {
+        setHasPayPwd(null);
+      }
+    })();
+  }, []);
+
+  const handleSubmitPaymentPassword = async () => {
+    if (payNewPwd.length < 6 || payNewPwd.length > 32) {
+      toast.error('支付密码应为 6-32 位');
+      return;
+    }
+    if (payNewPwd !== payConfirmPwd) {
+      toast.error('两次输入的支付密码不一致');
+      return;
+    }
+    if (hasPayPwd && !payOldPwd) {
+      toast.error('请输入原支付密码');
+      return;
+    }
+    setPaySubmitting(true);
+    try {
+      await userApi.setPaymentPassword(payNewPwd, hasPayPwd ? payOldPwd : undefined);
+      toast.success(hasPayPwd ? '支付密码修改成功' : '支付密码设置成功');
+      setPayOldPwd('');
+      setPayNewPwd('');
+      setPayConfirmPwd('');
+      setHasPayPwd(true);
+    } catch (e: any) {
+      toast.error(e?.message || '操作失败');
+    } finally {
+      setPaySubmitting(false);
+    }
+  };
 
   const passwordForm = useForm<PasswordFormData>({
     resolver: zodResolver(passwordSchema),
@@ -641,6 +687,61 @@ ${result.mnemonic}
                     {isSubmitting ? '修改中...' : '修改密码'}
                   </Button>
                 </form>
+
+                <Separator className="my-8" />
+
+                {/* 支付密码 */}
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-lg font-medium flex items-center gap-2">
+                      <Lock className="h-4 w-4" />支付密码
+                    </h3>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {hasPayPwd === null ? '加载中...' : hasPayPwd ? '已设置支付密码，用于积分消费时校验身份' : '未设置支付密码，请先设置后再进行积分支付'}
+                    </p>
+                  </div>
+                  <div className="grid gap-4">
+                    {hasPayPwd && (
+                      <div className="grid gap-2">
+                        <Label htmlFor="payOldPwd">当前支付密码</Label>
+                        <Input
+                          id="payOldPwd"
+                          type="password"
+                          placeholder="请输入当前支付密码"
+                          value={payOldPwd}
+                          onChange={(e) => setPayOldPwd(e.target.value)}
+                          maxLength={32}
+                        />
+                      </div>
+                    )}
+                    <div className="grid gap-2">
+                      <Label htmlFor="payNewPwd">{hasPayPwd ? '新支付密码' : '支付密码'}</Label>
+                      <Input
+                        id="payNewPwd"
+                        type="password"
+                        placeholder="6-32 位任意字符"
+                        value={payNewPwd}
+                        onChange={(e) => setPayNewPwd(e.target.value)}
+                        maxLength={32}
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="payConfirmPwd">确认支付密码</Label>
+                      <Input
+                        id="payConfirmPwd"
+                        type="password"
+                        placeholder="请再次输入支付密码"
+                        value={payConfirmPwd}
+                        onChange={(e) => setPayConfirmPwd(e.target.value)}
+                        maxLength={32}
+                      />
+                    </div>
+                  </div>
+                  <Button type="button" onClick={handleSubmitPaymentPassword} disabled={paySubmitting || hasPayPwd === null}>
+                    <Lock className="h-4 w-4 mr-2" />
+                    {paySubmitting ? '提交中...' : hasPayPwd ? '修改支付密码' : '设置支付密码'}
+                  </Button>
+                </div>
               </TabsContent>
 
               {/* Web3钱包 */}

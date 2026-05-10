@@ -40,6 +40,9 @@ import {
   RefreshCw,
   ChevronLeft,
   ChevronRight,
+  CheckSquare,
+  Square,
+  Send,
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -103,20 +106,66 @@ export default function AssetsPage() {
     copyright: '',
     license: 'CC-BY-NC-ND',
   });
+  // 批量选择与批量提交
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [batchOpen, setBatchOpen] = useState(false);
+  const [batchSubmitting, setBatchSubmitting] = useState(false);
+  const [batchResult, setBatchResult] = useState<{
+    total: number;
+    success_count: number;
+    failed_count: number;
+    results: Array<{ asset_id: string; success: boolean; error?: string }>;
+  } | null>(null);
+
+  // 可提交审核的状态：draft / offline / rejected / ''
+  const canSubmit = (p: AIIPAsset) =>
+    !p.status || p.status === 'draft' || p.status === 'offline' || p.status === 'rejected';
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev: Set<string>) => {
+      const next = new Set<string>(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectablePage: AIIPAsset[] = products.filter(canSubmit);
+  const allSelectedInPage =
+    selectablePage.length > 0 &&
+    selectablePage.every((p: AIIPAsset) => selectedIds.has(p.objectId));
+
+  const toggleSelectAll = () => {
+    setSelectedIds((prev: Set<string>) => {
+      const next = new Set<string>(prev);
+      if (allSelectedInPage) {
+        selectablePage.forEach((p: AIIPAsset) => next.delete(p.objectId));
+      } else {
+        selectablePage.forEach((p: AIIPAsset) => next.add(p.objectId));
+      }
+      return next;
+    });
+  };
+
+  const selectedAssets: AIIPAsset[] = products.filter((p: AIIPAsset) =>
+    selectedIds.has(p.objectId)
+  );
   const { user } = useAuthStore();
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
   const fetchProducts = useCallback(async () => {
     if (!user) return;
-    const ownerKey = user.web3Address || user.objectId;
     setLoading(true);
-    const result = await getUserAIIPAssets(ownerKey, {
-      category: typeFilter,
-      status: statusFilter,
-      page,
-      limit: PAGE_SIZE,
-    });
+    const result = await getUserAIIPAssets(
+      { ownerAddress: user.web3Address, ownerId: user.objectId },
+      {
+        category: typeFilter,
+        status: statusFilter,
+        page,
+        limit: PAGE_SIZE,
+      }
+    );
     if (result.success) {
       setProducts(result.data);
       setTotal(result.total);
@@ -143,19 +192,42 @@ export default function AssetsPage() {
   };
 
   const handleToggleStatus = async (asset: AIIPAsset) => {
-    // 上架流程：draft/offline/rejected -> pending(提交审核)；approved -> offline(下架)
-    let newStatus: AIIPAsset['status'];
+    // 上架流程：draft/offline/rejected -> 提交审核（同步创建/更新 Product）；approved -> offline(下架)
     if (asset.status === 'approved') {
-      newStatus = 'offline';
-    } else {
-      newStatus = 'pending'; // 提交审核
+      const result = await updateAIIPAssetStatus(asset.objectId, 'offline');
+      if (result.success) {
+        toast.success('下架成功');
+        fetchProducts();
+      } else {
+        toast.error(result.error || '操作失败');
+      }
+      return;
     }
-    const result = await updateAIIPAssetStatus(asset.objectId, newStatus);
-    if (result.success) {
-      toast.success(newStatus === 'pending' ? '已提交审核' : '下架成功');
-      fetchProducts();
-    } else {
-      toast.error(result.error || '操作失败');
+
+    // 提交审核：走后端 batch-submit 接口，确保创建 Product 实例
+    try {
+      const res = await assetsApi.batchSubmit([
+        {
+          asset_id: asset.objectId,
+          name: asset.name,
+          description: asset.description || '',
+          category: asset.category,
+          price: Number(asset.price) || 0,
+        },
+      ]);
+      if (res?.success) {
+        const item = (res.results || [])[0];
+        if (item && item.success === false) {
+          toast.error(item.error || '提交失败');
+        } else {
+          toast.success('已提交审核');
+          fetchProducts();
+        }
+      } else {
+        toast.error('提交失败');
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '提交失败');
     }
   };
 
@@ -173,35 +245,27 @@ export default function AssetsPage() {
 
   const handleSaveEdit = async () => {
     if (!editAsset) return;
-    
-    // 先尝试用新API编辑Product
-    if (editAsset.status !== 'draft') {
-      // 草稿才能用新API
+
+    // 统一走后端 API，支持 AIIPAsset/Product 双类 + draft/offline/rejected 三种可编辑状态
+    try {
       const result = await assetsApi.updateAsset(editAsset.objectId, {
         name: editForm.name,
         description: editForm.description,
         category: editForm.category,
-        coverKey: editAsset.cover,
+        price: Number(editForm.price) || 0,
         copyright: editForm.copyright,
         license: editForm.license,
         tags: [],
       });
-      if (result.success) {
+      if (result?.success) {
         toast.success('保存成功');
         setEditAsset(null);
         fetchProducts();
         return;
       }
-    }
-    
-    // 否则用Parse更新AIIPAsset
-    const result = await updateObject('AIIPAsset', editAsset.objectId, editForm);
-    if (result.success) {
-      toast.success('保存成功');
-      setEditAsset(null);
-      fetchProducts();
-    } else {
-      toast.error(result.error || '保存失败');
+      toast.error('保存失败');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '保存失败');
     }
   };
 
@@ -238,6 +302,67 @@ export default function AssetsPage() {
       fetchProducts();
     } else {
       toast.error(result.error || '创建失败');
+    }
+  };
+
+  const openBatchSubmit = () => {
+    if (selectedAssets.length === 0) {
+      toast.error('请先选择要批量提交的资产');
+      return;
+    }
+    const invalid = selectedAssets.filter((p) => !canSubmit(p));
+    if (invalid.length > 0) {
+      toast.error(`有 ${invalid.length} 个资产状态不可提交审核`);
+      return;
+    }
+    setBatchResult(null);
+    setBatchOpen(true);
+  };
+
+  const handleBatchSubmit = async () => {
+    if (selectedAssets.length === 0) return;
+    setBatchSubmitting(true);
+    try {
+      const res = await assetsApi.batchSubmit(
+        selectedAssets.map((p) => ({
+          asset_id: p.objectId,
+          name: p.name,
+          description: p.description || '',
+          category: p.category,
+          price: Number(p.price) || 0,
+        }))
+      );
+      // 后端直接返回 {total, success_count, failed_count, results}
+      type BatchRespShape = {
+        total: number;
+        success_count: number;
+        failed_count: number;
+        results: Array<{ asset_id: string; success: boolean; error?: string }>;
+      };
+      const data = (res as unknown as { data?: BatchRespShape }).data
+        ? (res as unknown as { data: BatchRespShape }).data
+        : (res as unknown as BatchRespShape);
+      setBatchResult(data);
+      if (data.success_count > 0) {
+        toast.success(`已提交 ${data.success_count} / ${data.total} 个资产等待审核`);
+        // 成功的列表从选中移除
+        const successIds = new Set(
+          data.results.filter((r) => r.success).map((r) => r.asset_id)
+        );
+        setSelectedIds((prev) => {
+          const next = new Set(prev);
+          successIds.forEach((id) => next.delete(id));
+          return next;
+        });
+        fetchProducts();
+      }
+      if (data.failed_count === 0) {
+        setBatchOpen(false);
+      }
+    } catch (err) {
+      toast.error((err as Error).message || '批量提交失败');
+    } finally {
+      setBatchSubmitting(false);
     }
   };
 
@@ -302,6 +427,28 @@ export default function AssetsPage() {
           <Input placeholder="搜索资产..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-10" />
         </div>
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={toggleSelectAll}
+            disabled={selectablePage.length === 0}
+            title="全选本页可提交资产"
+          >
+            {allSelectedInPage ? (
+              <CheckSquare className="mr-1 h-4 w-4" />
+            ) : (
+              <Square className="mr-1 h-4 w-4" />
+            )}
+            {allSelectedInPage ? '取消全选' : '全选本页'}
+          </Button>
+          <Button
+            size="sm"
+            onClick={openBatchSubmit}
+            disabled={selectedAssets.length === 0}
+          >
+            <Send className="mr-1 h-4 w-4" />
+            批量提交审核{selectedAssets.length > 0 ? ` (${selectedAssets.length})` : ''}
+          </Button>
           <Select value={typeFilter} onValueChange={(v) => { setTypeFilter(v); setPage(1); }}>
             <SelectTrigger className="w-[120px]"><SelectValue placeholder="类型" /></SelectTrigger>
             <SelectContent>
@@ -344,6 +491,19 @@ export default function AssetsPage() {
             return (
               <Card key={product.objectId} className="overflow-hidden">
                 <div className="relative aspect-square bg-muted">
+                  {canSubmit(product) && (
+                    <label
+                      className="absolute left-2 top-2 z-10 flex h-6 w-6 cursor-pointer items-center justify-center rounded bg-background/90 border shadow"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 cursor-pointer"
+                        checked={selectedIds.has(product.objectId)}
+                        onChange={() => toggleSelect(product.objectId)}
+                      />
+                    </label>
+                  )}
                   {product.cover ? (<img src={product.cover} alt={product.name} className="h-full w-full object-cover" />) : (<div className="flex h-full items-center justify-center"><TypeIcon className="h-16 w-16 text-muted-foreground/50" /></div>)}
                   <div className="absolute right-2 top-2"><Badge variant={statusColors[product.status] || 'default'}>{statusLabels[product.status] || product.status}</Badge></div>
                   <DropdownMenu>
@@ -359,7 +519,7 @@ export default function AssetsPage() {
                 <CardContent className="p-4">
                   <h3 className="truncate font-medium">{product.name}</h3>
                   <div className="mt-2 flex items-center justify-between text-sm text-muted-foreground">
-                    <span>¥{product.price}</span>
+                    <span>{product.price} 积分</span>
                     <span>{product.views || 0} 浏览</span>
                   </div>
                   {rejectReason && (
@@ -379,6 +539,15 @@ export default function AssetsPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b">
+                  <th className="p-4 text-left font-medium w-10">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 cursor-pointer"
+                      checked={allSelectedInPage}
+                      onChange={toggleSelectAll}
+                      disabled={selectablePage.length === 0}
+                    />
+                  </th>
                   <th className="p-4 text-left font-medium">资产名称</th>
                   <th className="p-4 text-left font-medium">类型</th>
                   <th className="p-4 text-left font-medium">状态</th>
@@ -393,6 +562,18 @@ export default function AssetsPage() {
                   const rejectReason = getRejectReason(product);
                   return (
                     <tr key={product.objectId} className="border-b last:border-0">
+                      <td className="p-4 w-10">
+                        {canSubmit(product) ? (
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 cursor-pointer"
+                            checked={selectedIds.has(product.objectId)}
+                            onChange={() => toggleSelect(product.objectId)}
+                          />
+                        ) : (
+                          <span className="text-xs text-muted-foreground">-</span>
+                        )}
+                      </td>
                       <td className="p-4"><div className="flex items-center gap-3"><div className="flex h-10 w-10 items-center justify-center rounded bg-muted"><TypeIcon className="h-5 w-5 text-muted-foreground" /></div><span className="font-medium">{product.name}</span></div></td>
                       <td className="p-4">{product.category}</td>
                       <td className="p-4">
@@ -405,7 +586,7 @@ export default function AssetsPage() {
                           )}
                         </div>
                       </td>
-                      <td className="p-4">¥{product.price}</td>
+                      <td className="p-4">{product.price} 积分</td>
                       <td className="p-4">{product.views || 0}</td>
                       <td className="p-4">
                         <div className="flex gap-2">
@@ -450,7 +631,7 @@ export default function AssetsPage() {
               {previewAsset.cover && <img src={previewAsset.cover} alt={previewAsset.name} className="w-full rounded-lg" />}
               <div className="grid grid-cols-2 gap-2 text-sm">
                 <div>类型：{previewAsset.category}</div>
-                <div>价格：¥{previewAsset.price}</div>
+                <div>价格：{previewAsset.price} 积分</div>
                 <div>状态：<Badge variant={statusColors[previewAsset.status] || 'default'}>{statusLabels[previewAsset.status]}</Badge></div>
                 <div>浏览量：{previewAsset.views || 0}</div>
               </div>
@@ -499,7 +680,7 @@ export default function AssetsPage() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>价格 (元)</Label>
+              <Label>价格 (积分)</Label>
               <Input type="number" value={editForm.price} onChange={(e) => setEditForm(f => ({ ...f, price: Number(e.target.value) }))} />
             </div>
             <div className="space-y-2">
@@ -527,6 +708,83 @@ export default function AssetsPage() {
             <div className="flex gap-2 justify-end">
               <Button variant="outline" onClick={() => setEditAsset(null)}>取消</Button>
               <Button onClick={handleSaveEdit}>保存</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+      {/* 批量提交弹窗 */}
+      <Dialog open={batchOpen} onOpenChange={(open) => { if (!batchSubmitting) setBatchOpen(open); }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>批量提交审核</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              将批量将 {selectedAssets.length} 个资产提交给管理员审核，审核通过后将在 AI 商城上架。
+            </p>
+            <div className="max-h-72 overflow-y-auto rounded-md border">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/50 sticky top-0">
+                  <tr className="text-left">
+                    <th className="p-2 font-medium">名称</th>
+                    <th className="p-2 font-medium">分类</th>
+                    <th className="p-2 font-medium">价格</th>
+                    <th className="p-2 font-medium">状态</th>
+                    {batchResult && <th className="p-2 font-medium">结果</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedAssets.map((p: AIIPAsset) => {
+                    const r = batchResult?.results.find((x) => x.asset_id === p.objectId);
+                    return (
+                      <tr key={p.objectId} className="border-t">
+                        <td className="p-2 break-all">{p.name || '-'}</td>
+                        <td className="p-2">{p.category}</td>
+                        <td className="p-2">{p.price || 0} 积分</td>
+                        <td className="p-2">
+                          <Badge variant={statusColors[p.status] || 'default'}>
+                            {statusLabels[p.status] || p.status || '草稿'}
+                          </Badge>
+                        </td>
+                        {batchResult && (
+                          <td className="p-2">
+                            {r?.success ? (
+                              <span className="text-xs text-green-600">✓ 已提交</span>
+                            ) : r ? (
+                              <span className="text-xs text-destructive" title={r.error}>✗ {r.error || '失败'}</span>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">-</span>
+                            )}
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {batchResult && (
+              <div className="rounded-md bg-muted p-3 text-sm">
+                合计 {batchResult.total} 个，成功 {batchResult.success_count} 个，失败 {batchResult.failed_count} 个。
+              </div>
+            )}
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setBatchOpen(false)} disabled={batchSubmitting}>
+                {batchResult && batchResult.failed_count === 0 ? '关闭' : '取消'}
+              </Button>
+              {(!batchResult || batchResult.failed_count > 0) && (
+                <Button onClick={handleBatchSubmit} disabled={batchSubmitting}>
+                  {batchSubmitting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />提交中...
+                    </>
+                  ) : batchResult ? (
+                    '重试失败项'
+                  ) : (
+                    '确认提交'
+                  )}
+                </Button>
+              )}
             </div>
           </div>
         </DialogContent>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -39,9 +40,11 @@ import {
   Coins,
   ChevronLeft,
   ChevronRight,
+  Package,
 } from 'lucide-react';
 import { useAuthStore } from '@/store';
 import { getUserAITasks, deleteObject, type AITask } from '@/lib/parse-actions';
+import { taskApi } from '@/lib/api';
 import toast from 'react-hot-toast';
 
 // 状态配置 - 使用数字类型
@@ -72,7 +75,9 @@ export default function AITasksPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedTask, setSelectedTask] = useState<AITask | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [convertingId, setConvertingId] = useState<string | null>(null);
   const { user } = useAuthStore();
+  const router = useRouter();
   const pageSize = 10;
 
   const fetchTasks = useCallback(async () => {
@@ -133,6 +138,35 @@ export default function AITasksPage() {
     } catch {
       // 如果下载失败，直接打开链接
       window.open(url, '_blank');
+    }
+  };
+
+  const handleConvertToAsset = async (task: AITask) => {
+    const taskId = task.taskId || task.objectId;
+    if (!taskId) {
+      toast.error('任务ID缺失');
+      return;
+    }
+    if (!confirm('将此任务的生成结果转为AI资产？后续可在 "我的资产" 申请上架到AI商城。')) return;
+    setConvertingId(taskId);
+    try {
+      const res = await taskApi.convertTaskToAsset(taskId);
+      if (res?.success) {
+        const msg = res.message || `成功转换 ${res.converted_count} 个资产`;
+        if (res.converted_count > 0) {
+          toast.success(msg);
+          router.push('/assets');
+        } else {
+          toast(msg, { icon: 'ℹ️' });
+        }
+      } else {
+        toast.error('转换失败');
+      }
+    } catch (e) {
+      const errMsg = e instanceof Error ? e.message : '转换失败';
+      toast.error(errMsg);
+    } finally {
+      setConvertingId(null);
     }
   };
 
@@ -336,6 +370,21 @@ export default function AITasksPage() {
                                 <Download className="h-4 w-4" />
                               </Button>
                             )}
+                            {canDownload && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                title="转为AI资产"
+                                disabled={convertingId === (task.taskId || task.objectId)}
+                                onClick={() => handleConvertToAsset(task)}
+                              >
+                                {convertingId === (task.taskId || task.objectId) ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Package className="h-4 w-4" />
+                                )}
+                              </Button>
+                            )}
                             <Button
                               size="sm"
                               variant="ghost"
@@ -515,7 +564,22 @@ export default function AITasksPage() {
                 {/* 结果 */}
                 {(selectedTask.status === 2 || selectedTask.status === 4) && selectedTask.results && selectedTask.results.length > 0 && (
                   <div>
-                    <Label>生成结果</Label>
+                    <div className="flex items-center justify-between mb-2">
+                      <Label>生成结果</Label>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={convertingId === (selectedTask.taskId || selectedTask.objectId)}
+                        onClick={() => handleConvertToAsset(selectedTask)}
+                      >
+                        {convertingId === (selectedTask.taskId || selectedTask.objectId) ? (
+                          <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                        ) : (
+                          <Package className="h-4 w-4 mr-1" />
+                        )}
+                        转为AI资产
+                      </Button>
+                    </div>
                     <div className="mt-2 grid grid-cols-2 gap-3">
                       {selectedTask.results.map((result, idx) => (
                         <div key={idx} className="relative rounded-lg overflow-hidden border bg-muted">

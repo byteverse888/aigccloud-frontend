@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
   SelectContent,
@@ -20,10 +21,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { ChevronLeft, ChevronRight, Loader2, RefreshCw, Search, Eye, Trash2 } from 'lucide-react';
-import { adminApi } from '@/lib/api';
+import { ChevronLeft, ChevronRight, Loader2, RefreshCw, Search, Eye, Trash2, Edit, Upload, X, Plus } from 'lucide-react';
+import { adminApi, taskApi } from '@/lib/api';
 import toast from 'react-hot-toast';
 import { CopyableCell } from '@/components/admin/copyable-cell';
+import { useFileUpload } from '@/hooks/useFileUpload';
 
 interface TaskRow {
   objectId: string;
@@ -93,6 +95,18 @@ export function TasksView({ title = '任务中心', subtitle = '查看全平台�
   const [designer, setDesigner] = useState('');
   const [detailOpen, setDetailOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<TaskRow | null>(null);
+  // 编辑任务
+  const [editOpen, setEditOpen] = useState(false);
+  const [editSubmitting, setEditSubmitting] = useState(false);
+  const [editForm, setEditForm] = useState<{
+    description: string;
+    status: string;
+    errorMessage: string;
+    results: Array<{ url: string; thumbnail: string; type: string }>;
+  }>({ description: '', status: '2', errorMessage: '', results: [] });
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [uploadingIndex, setUploadingIndex] = useState<number | null>(null);
+  const { uploadFile } = useFileUpload({ prefix: 'tasks' });
   // 批量选中
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
@@ -185,6 +199,111 @@ export function TasksView({ title = '任务中心', subtitle = '查看全平台�
     setDetailOpen(true);
   };
 
+  const guessResultType = (url: string): string => {
+    const u = url.toLowerCase();
+    if (/\.(png|jpg|jpeg|gif|webp|bmp|svg)(\?|$)/.test(u)) return 'image';
+    if (/\.(mp3|wav|ogg|flac|m4a|aac)(\?|$)/.test(u)) return 'audio';
+    if (/\.(mp4|webm|mov|avi|mkv)(\?|$)/.test(u)) return 'video';
+    return 'other';
+  };
+
+  const openEdit = (task: TaskRow) => {
+    const results = Array.isArray(task.results)
+      ? (task.results as Array<Record<string, unknown>>).map((r) => ({
+          url: String(r.url || ''),
+          thumbnail: String(r.thumbnail || ''),
+          type: String(r.type || guessResultType(String(r.url || ''))),
+        }))
+      : [];
+    setEditForm({
+      description: getTaskDescription(task),
+      status: String(task.status ?? 2),
+      errorMessage: task.errorMessage || '',
+      results,
+    });
+    setSelectedTask(task);
+    setDetailOpen(false);
+    setEditOpen(true);
+  };
+
+  const addResult = () =>
+    setEditForm((f) => ({
+      ...f,
+      results: [...f.results, { url: '', thumbnail: '', type: 'image' }],
+    }));
+
+  const removeResult = (idx: number) =>
+    setEditForm((f) => ({
+      ...f,
+      results: f.results.filter((_, i) => i !== idx),
+    }));
+
+  const updateResultField = (
+    idx: number,
+    field: 'url' | 'thumbnail' | 'type',
+    value: string
+  ) =>
+    setEditForm((f) => ({
+      ...f,
+      results: f.results.map((r, i) => (i === idx ? { ...r, [field]: value } : r)),
+    }));
+
+  const handleUploadResult = async (idx: number, file: File) => {
+    setUploadingIndex(idx);
+    try {
+      const res = await uploadFile(file);
+      if (res?.fileUrl) {
+        setEditForm((f) => ({
+          ...f,
+          results: f.results.map((r, i) =>
+            i === idx
+              ? { ...r, url: res.fileUrl, type: r.type || guessResultType(file.name) }
+              : r
+          ),
+        }));
+        toast.success('文件上传成功');
+      } else {
+        toast.error('文件上传失败');
+      }
+    } catch (err) {
+      toast.error((err as Error).message || '上传失败');
+    } finally {
+      setUploadingIndex(null);
+    }
+  };
+
+  const handleSaveEdit = async () => {
+    if (!selectedTask) return;
+    const payload: {
+      description?: string;
+      status?: number;
+      results?: Array<{ url: string; thumbnail?: string; type?: string }>;
+      error_message?: string;
+    } = {
+      description: editForm.description,
+      status: Number(editForm.status),
+      error_message: editForm.errorMessage,
+      results: editForm.results
+        .filter((r) => r.url.trim())
+        .map((r) => ({
+          url: r.url.trim(),
+          thumbnail: r.thumbnail.trim() || undefined,
+          type: r.type || undefined,
+        })),
+    };
+    setEditSubmitting(true);
+    try {
+      await taskApi.adminUpdateTask(selectedTask.objectId, payload);
+      toast.success('任务已更新');
+      setEditOpen(false);
+      fetchTasks();
+    } catch (err) {
+      toast.error((err as Error).message || '更新失败');
+    } finally {
+      setEditSubmitting(false);
+    }
+  };
+
   const handleDelete = async (task: TaskRow) => {
     if (!confirm(`确定要删除任务 ${task.task_id || task.objectId} 吗？`)) return;
     try {
@@ -201,8 +320,13 @@ export function TasksView({ title = '任务中心', subtitle = '查看全平台�
     }
   };
 
-  const formatDate = (dateStr?: string) =>
-    dateStr ? new Date(dateStr).toLocaleString('zh-CN') : '-';
+  const formatDate = (dateStr?: string) => {
+    if (!dateStr) return '-';
+    const d = new Date(dateStr);
+    if (Number.isNaN(d.getTime())) return '-';
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
 
   return (
     <div className="space-y-6">
@@ -337,11 +461,11 @@ export function TasksView({ title = '任务中心', subtitle = '查看全平台�
                       </th>
                       <th className="px-3 py-3 text-left text-xs font-medium whitespace-nowrap w-[180px]">任务ID</th>
                       <th className="px-3 py-3 text-left text-xs font-medium whitespace-nowrap w-[90px]">类型</th>
-                      <th className="px-3 py-3 text-left text-xs font-medium whitespace-nowrap w-[140px]">模型</th>
+                      <th className="px-3 py-3 text-left text-xs font-medium whitespace-nowrap w-[110px]">模型</th>
                       <th className="px-3 py-3 text-left text-xs font-medium whitespace-nowrap w-[130px]">提交人</th>
                       <th className="px-3 py-3 text-left text-xs font-medium whitespace-nowrap w-[90px]">状态</th>
-                      <th className="px-3 py-3 text-left text-xs font-medium w-[260px]">任务描述</th>
-                      <th className="px-3 py-3 text-left text-xs font-medium whitespace-nowrap w-[150px]">创建时间</th>
+                      <th className="px-3 py-3 text-left text-xs font-medium w-[180px]">任务描述</th>
+                      <th className="px-3 py-3 text-left text-xs font-medium whitespace-nowrap w-[130px]">创建时间</th>
                       <th className="px-3 py-3 text-left text-xs font-medium whitespace-nowrap w-[130px]">操作</th>
                     </tr>
                   </thead>
@@ -373,7 +497,7 @@ export function TasksView({ title = '任务中心', subtitle = '查看全平台�
                             {typeLabels[task.type] || task.type}
                           </td>
                           <td className="px-3 py-3 text-sm">
-                            <CopyableCell value={task.model || ''} maxWidth="max-w-[130px]" />
+                            <CopyableCell value={task.model || ''} maxWidth="max-w-[100px]" />
                           </td>
                           <td className="px-3 py-3 text-sm">
                             <div className="flex flex-col gap-0.5">
@@ -395,7 +519,7 @@ export function TasksView({ title = '任务中心', subtitle = '查看全平台�
                             </Badge>
                           </td>
                           <td className="px-3 py-3 text-sm">
-                            <div className="truncate max-w-[260px]" title={desc || ''}>
+                            <div className="truncate max-w-[180px]" title={desc || ''}>
                               {desc || <span className="text-muted-foreground">-</span>}
                             </div>
                           </td>
@@ -407,6 +531,10 @@ export function TasksView({ title = '任务中心', subtitle = '查看全平台�
                               <Button size="sm" variant="outline" onClick={() => openDetail(task)}>
                                 <Eye className="h-4 w-4 mr-1" />
                                 详情
+                              </Button>
+                              <Button size="sm" variant="outline" onClick={() => openEdit(task)}>
+                                <Edit className="h-4 w-4 mr-1" />
+                                编辑
                               </Button>
                               <Button
                                 size="sm"
@@ -565,9 +693,220 @@ export function TasksView({ title = '任务中心', subtitle = '查看全平台�
                     </p>
                   </div>
                 )}
+
+                {/* 任务结果 */}
+                {Array.isArray(selectedTask.results) && selectedTask.results.length > 0 && (
+                  <div>
+                    <Label>任务结果</Label>
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      {(selectedTask.results as Array<Record<string, unknown>>).map((r, idx) => {
+                        const url = String(r.url || '');
+                        const thumb = String(r.thumbnail || '') || url;
+                        const type = String(r.type || '');
+                        return (
+                          <a
+                            key={idx}
+                            href={url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="flex flex-col rounded-md border overflow-hidden hover:border-primary"
+                          >
+                            {type === 'image' && thumb ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={thumb} alt="result" className="h-32 w-full object-cover" />
+                            ) : (
+                              <div className="flex h-32 items-center justify-center bg-muted text-xs text-muted-foreground">
+                                {type || '文件'}
+                              </div>
+                            )}
+                            <div className="truncate bg-muted/50 p-2 text-xs" title={url}>
+                              {url}
+                            </div>
+                          </a>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button variant="outline" onClick={() => openEdit(selectedTask)}>
+                    <Edit className="mr-1 h-4 w-4" />
+                    编辑任务
+                  </Button>
+                </div>
               </div>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+      {/* 任务编辑弹窗 */}
+      <Dialog
+        open={editOpen}
+        onOpenChange={(open) => {
+          if (!editSubmitting) setEditOpen(open);
+        }}
+      >
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>编辑任务</DialogTitle>
+            <DialogDescription>
+              可更新任务描述、状态、错误信息及任务结果
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>状态</Label>
+                <Select
+                  value={editForm.status}
+                  onValueChange={(v: string) => setEditForm((f) => ({ ...f, status: v }))}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="0">排队中</SelectItem>
+                    <SelectItem value="1">处理中</SelectItem>
+                    <SelectItem value="2">已完成</SelectItem>
+                    <SelectItem value="3">失败</SelectItem>
+                    <SelectItem value="4">已结算</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div>
+              <Label>任务描述 / 提示词</Label>
+              <Textarea
+                className="mt-1"
+                rows={3}
+                value={editForm.description}
+                onChange={(e) =>
+                  setEditForm((f) => ({ ...f, description: e.target.value }))
+                }
+              />
+            </div>
+            <div>
+              <Label>错误信息（可选）</Label>
+              <Textarea
+                className="mt-1"
+                rows={2}
+                value={editForm.errorMessage}
+                onChange={(e) =>
+                  setEditForm((f) => ({ ...f, errorMessage: e.target.value }))
+                }
+              />
+            </div>
+            <div>
+              <div className="flex items-center justify-between">
+                <Label>任务结果</Label>
+                <Button type="button" size="sm" variant="outline" onClick={addResult}>
+                  <Plus className="mr-1 h-3 w-3" />
+                  新增一条
+                </Button>
+              </div>
+              <div className="mt-2 space-y-3">
+                {editForm.results.length === 0 && (
+                  <p className="text-xs text-muted-foreground">暂无结果，可点击“新增一条”或通过上传文件添加</p>
+                )}
+                {editForm.results.map((r, idx) => (
+                  <div key={idx} className="rounded-md border p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">结果 #{idx + 1}</span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="text-destructive"
+                        onClick={() => removeResult(idx)}
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </div>
+                    <div className="grid grid-cols-[1fr_120px] gap-2">
+                      <div>
+                        <Label className="text-xs">URL</Label>
+                        <Input
+                          className="mt-1"
+                          placeholder="https://..."
+                          value={r.url}
+                          onChange={(e) => updateResultField(idx, 'url', e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">类型</Label>
+                        <Select
+                          value={r.type || 'image'}
+                          onValueChange={(v: string) => updateResultField(idx, 'type', v)}
+                        >
+                          <SelectTrigger className="mt-1">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="image">图片</SelectItem>
+                            <SelectItem value="audio">音频</SelectItem>
+                            <SelectItem value="video">视频</SelectItem>
+                            <SelectItem value="other">其他</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div>
+                      <Label className="text-xs">缩略图（可选）</Label>
+                      <Input
+                        className="mt-1"
+                        placeholder="https://..."
+                        value={r.thumbnail}
+                        onChange={(e) => updateResultField(idx, 'thumbnail', e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={uploadingIndex !== null}
+                        onClick={() => {
+                          if (!fileInputRef.current) return;
+                          fileInputRef.current.onchange = async (ev) => {
+                            const file = (ev.target as HTMLInputElement).files?.[0];
+                            if (file) await handleUploadResult(idx, file);
+                            if (fileInputRef.current) fileInputRef.current.value = '';
+                          };
+                          fileInputRef.current.click();
+                        }}
+                      >
+                        {uploadingIndex === idx ? (
+                          <>
+                            <Loader2 className="mr-1 h-3 w-3 animate-spin" />上传中...
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="mr-1 h-3 w-3" />上传文件作为URL
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <input ref={fileInputRef} type="file" className="hidden" />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setEditOpen(false)} disabled={editSubmitting}>
+                取消
+              </Button>
+              <Button onClick={handleSaveEdit} disabled={editSubmitting}>
+                {editSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />保存中...
+                  </>
+                ) : (
+                  '保存'
+                )}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

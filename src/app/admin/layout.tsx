@@ -20,10 +20,10 @@ const baseNavItems = [
   { href: '/admin/statistics', icon: BarChart3, label: '运营统计' },
   { href: '/admin/users', icon: Users, label: '用户管理' },
   { href: '/admin/roles', icon: Shield, label: '角色管理', adminOnly: true },
-  { href: '/admin/products', icon: Package, label: '商品管理' },
-  { href: '/admin/assets', icon: Palette, label: 'AI 资产' },
-  { href: '/admin/orders', icon: ShoppingCart, label: '订单管理' },
   { href: '/admin/tasks', icon: ClipboardList, label: '任务中心' },
+  { href: '/admin/assets', icon: Palette, label: 'AI 资产' },
+  { href: '/admin/products', icon: Package, label: '商品管理' },
+  { href: '/admin/orders', icon: ShoppingCart, label: '订单管理' },
   { href: '/admin/operation-logs', icon: ClipboardList, label: '操作日志' },
   { href: '/admin/settings', icon: Settings, label: '系统设置', adminOnly: true },
 ];

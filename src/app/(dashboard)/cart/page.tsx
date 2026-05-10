@@ -110,11 +110,11 @@ export default function CartPage() {
                     <div className="h-20 w-20 rounded bg-muted" />
                     <div className="flex-1">
                       <h3 className="font-medium">{item.name}</h3>
-                      <p className="text-lg font-bold text-primary">¥{item.price}</p>
+                      <p className="text-lg font-bold text-primary">{item.price} 积分</p>
                       <p className="mt-1 text-xs text-muted-foreground">数字资产仅限购买 1 份</p>
                     </div>
                     <div className="text-right">
-                      <p className="font-bold">¥{item.price.toFixed(2)}</p>
+                      <p className="font-bold">{item.price} 积分</p>
                       <Button
                         size="sm"
                         variant="ghost"
@@ -140,16 +140,16 @@ export default function CartPage() {
             <CardContent className="space-y-4">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">商品总价</span>
-                <span>¥{getTotalPrice().toFixed(2)}</span>
+                <span>{getTotalPrice()} 积分</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">优惠折扣</span>
-                <span className="text-green-500">-¥0.00</span>
+                <span className="text-green-500">-0 积分</span>
               </div>
               <Separator />
               <div className="flex justify-between text-lg font-bold">
-                <span>应付金额</span>
-                <span className="text-primary">¥{getTotalPrice().toFixed(2)}</span>
+                <span>应付积分</span>
+                <span className="text-primary">{getTotalPrice()} 积分</span>
               </div>
               <Button className="w-full" size="lg" onClick={handleCheckout}>
                 立即结算

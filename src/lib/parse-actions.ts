@@ -692,9 +692,33 @@ export interface AIIPAsset {
   updatedAt?: string;
 }
 
-// 获取用户的AIIP资产
-export async function getUserAIIPAssets(ownerAddress: string, options?: { status?: string; category?: string; page?: number; limit?: number }) {
-  const where: Record<string, unknown> = { ownerAddress };
+// 获取用户的AIIP资产（同时兼容 ownerAddress（web3地址）和 ownerId（用户对象ID））
+export async function getUserAIIPAssets(
+  owner: string | { ownerAddress?: string; ownerId?: string },
+  options?: { status?: string; category?: string; page?: number; limit?: number }
+) {
+  const where: Record<string, unknown> = {};
+
+  // 构建 owner 查询条件：支持 ownerAddress 或 ownerId 匹配（$or）
+  let ownerAddress: string | undefined;
+  let ownerId: string | undefined;
+  if (typeof owner === 'string') {
+    ownerAddress = owner;
+  } else {
+    ownerAddress = owner.ownerAddress;
+    ownerId = owner.ownerId;
+  }
+
+  const orConditions: Record<string, unknown>[] = [];
+  if (ownerAddress) orConditions.push({ ownerAddress });
+  if (ownerId) orConditions.push({ ownerId });
+
+  if (orConditions.length > 1) {
+    where.$or = orConditions;
+  } else if (orConditions.length === 1) {
+    Object.assign(where, orConditions[0]);
+  }
+
   if (options?.status && options.status !== 'all') where.status = options.status;
   if (options?.category && options.category !== 'all') where.category = options.category;
   return paginatedQuery<AIIPAsset>('AIIPAsset', where, options?.page || 1, options?.limit || 20);
@@ -1005,9 +1029,9 @@ export interface Asset {
 
 export async function getUserAssets(userId: string, options?: { type?: string; status?: string; page?: number; limit?: number }) {
   const where: Record<string, unknown> = { ownerId: userId };
-  if (options?.type && options.type !== 'all') where.type = options.type;
+  if (options?.type && options.type !== 'all') where.category = options.type;
   if (options?.status && options.status !== 'all') where.status = options.status;
-  return paginatedQuery<Asset>('Asset', where, options?.page || 1, options?.limit || 20);
+  return paginatedQuery<Asset>('AIIPAsset', where, options?.page || 1, options?.limit || 20);
 }
 
 // ============ AI任务 ============
@@ -1209,10 +1233,10 @@ export async function cancelOrder(orderId: string) {
 }
 
 // 使用积分余额购买商品（调用 FastAPI，依赖 api.ts 自动注入 JWT）
-export async function purchaseWithBalance(assetId: string) {
+export async function purchaseWithBalance(assetId: string, paymentPassword: string) {
   try {
     const { assetsApi } = await import('@/lib/api');
-    const data = await assetsApi.purchaseWithBalance(assetId);
+    const data = await assetsApi.purchaseWithBalance(assetId, paymentPassword);
     return {
       success: true,
       orderNo: data?.order_no,
@@ -1386,7 +1410,7 @@ export async function getUserWithdrawRequests(userId: string, page = 1, limit = 
 export async function getUserStats(userId: string) {
   try {
     const [assets, orders, followers, following] = await Promise.all([
-      countObjects('Asset', { ownerId: userId }),
+      countObjects('AIIPAsset', { ownerId: userId }),
       countObjects('Order', { userId }),
       countObjects('Follow', { followingId: userId }),
       countObjects('Follow', { followerId: userId }),

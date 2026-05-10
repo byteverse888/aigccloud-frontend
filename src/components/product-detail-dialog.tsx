@@ -10,6 +10,15 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   Image,
   Mic,
@@ -27,9 +36,11 @@ import {
   Download,
   Eye,
   Loader2,
+  Flag,
 } from 'lucide-react';
 import { type Product } from '@/lib/parse-actions';
 import { rateProduct, getUserRating } from '@/lib/parse-actions';
+import { productsApi } from '@/lib/api';
 import { cn, copyText, stripEmailFromName } from '@/lib/utils';
 import { StarRating } from '@/components/ui/star-rating';
 import { useAuthStore } from '@/store';
@@ -80,6 +91,10 @@ export function ProductDetailDialog({
   const [audioRef, setAudioRef] = useState<HTMLAudioElement | null>(null);
   const [userRating, setUserRating] = useState<number>(0);
   const [ratingLoading, setRatingLoading] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportReason, setReportReason] = useState<string>('inappropriate');
+  const [reportDesc, setReportDesc] = useState('');
+  const [reportSubmitting, setReportSubmitting] = useState(false);
   const { user } = useAuthStore();
 
   useEffect(() => {
@@ -108,6 +123,42 @@ export function ProductDetailDialog({
       audioRef.play();
     }
     setAudioPlaying(!audioPlaying);
+  };
+
+  const openReport = () => {
+    if (!user?.objectId) {
+      toast.error('请先登录');
+      return;
+    }
+    setReportReason('inappropriate');
+    setReportDesc('');
+    setReportOpen(true);
+  };
+
+  const submitReport = async () => {
+    if (!product) return;
+    if (!reportReason) {
+      toast.error('请选择投诉原因');
+      return;
+    }
+    setReportSubmitting(true);
+    try {
+      const res = await productsApi.report(
+        product.objectId,
+        reportReason,
+        reportDesc.trim() || undefined,
+      );
+      if (res?.success) {
+        toast.success(res.message || '投诉已提交');
+        setReportOpen(false);
+      } else {
+        toast.error('投诉提交失败');
+      }
+    } catch (err) {
+      toast.error((err as Error).message || '投诉提交失败');
+    } finally {
+      setReportSubmitting(false);
+    }
   };
 
   const renderPreview = () => {
@@ -196,9 +247,9 @@ export function ProductDetailDialog({
               )}
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-2xl font-bold text-primary">¥{product.price}</span>
+              <span className="text-2xl font-bold text-primary">{product.price} 积分</span>
               {product.originalPrice && (
-                <span className="text-sm text-muted-foreground line-through">¥{product.originalPrice}</span>
+                <span className="text-sm text-muted-foreground line-through">{product.originalPrice} 积分</span>
               )}
             </div>
           </div>
@@ -357,8 +408,70 @@ export function ProductDetailDialog({
               <Share2 className="h-4 w-4" />
             </Button>
           </div>
+
+          {/* 投诉入口 */}
+          <div className="pt-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs text-muted-foreground hover:text-destructive"
+              onClick={openReport}
+            >
+              <Flag className="h-3.5 w-3.5 mr-1" />
+              投诉该商品
+            </Button>
+          </div>
         </div>
       </DialogContent>
+
+      {/* 投诉对话框 */}
+      <Dialog open={reportOpen} onOpenChange={setReportOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>投诉商品</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="text-sm text-muted-foreground">
+              商品：<span className="font-medium text-foreground">{product.name}</span>
+            </div>
+            <div className="space-y-2">
+              <Label>投诉原因</Label>
+              <Select value={reportReason} onValueChange={setReportReason}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="copyright">侵权/盗版</SelectItem>
+                  <SelectItem value="inappropriate">不当内容</SelectItem>
+                  <SelectItem value="fraud">虚假信息</SelectItem>
+                  <SelectItem value="spam">垃圾广告</SelectItem>
+                  <SelectItem value="other">其他</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>详细说明（选填）</Label>
+              <Textarea
+                placeholder="请描述具体问题，帮助管理员更快核实..."
+                value={reportDesc}
+                onChange={(e) => setReportDesc(e.target.value)}
+                rows={4}
+                maxLength={500}
+              />
+              <div className="text-right text-xs text-muted-foreground">{reportDesc.length}/500</div>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => setReportOpen(false)} disabled={reportSubmitting}>
+                取消
+              </Button>
+              <Button onClick={submitReport} disabled={reportSubmitting}>
+                {reportSubmitting && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
+                提交投诉
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   );
 }

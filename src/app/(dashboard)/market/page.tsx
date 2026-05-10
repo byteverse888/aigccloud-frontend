@@ -118,6 +118,10 @@ export default function MarketPage() {
   const [detailProduct, setDetailProduct] = useState<Product | null>(null);
   // 账户积分支付 loading
   const [payingWithBalance, setPayingWithBalance] = useState(false);
+  // 积分支付弹窗（含支付密码）
+  const [balancePayOpen, setBalancePayOpen] = useState(false);
+  const [balancePayProduct, setBalancePayProduct] = useState<Product | null>(null);
+  const [balancePayPwd, setBalancePayPwd] = useState('');
   const { addItem } = useCartStore();
   const { user, setUser } = useAuthStore();
   const { privateKey: storedPrivateKey, walletType } = useWalletStore(); // 从内存获取私钥
@@ -186,15 +190,39 @@ export default function MarketPage() {
       toast.error('不能购买自己的商品');
       return;
     }
-    // 仅账户积分支付：直接确认后扣款
-    if (!confirm(`确定使用账户积分购买「${product.name}」？\n价格: ${product.price} 积分`)) {
+    // 检查支付密码是否已设置
+    try {
+      const { userApi } = await import('@/lib/api');
+      const s = await userApi.getPaymentPasswordStatus();
+      if (!s.has_payment_password) {
+        toast.error('请先在「个人设置 - 安全」设置支付密码');
+        return;
+      }
+    } catch {
+      toast.error('无法校验支付密码状态，请稍后重试');
+      return;
+    }
+    // 打开支付弹窗收集支付密码
+    setBalancePayProduct(product);
+    setBalancePayPwd('');
+    setBalancePayOpen(true);
+  };
+
+  const handleConfirmBalancePay = async () => {
+    const product = balancePayProduct;
+    if (!product) return;
+    if (!balancePayPwd || balancePayPwd.length < 6) {
+      toast.error('请输入 6 位以上支付密码');
       return;
     }
     setPayingWithBalance(true);
     try {
-      const res = await purchaseWithBalance(product.objectId);
+      const res = await purchaseWithBalance(product.objectId, balancePayPwd);
       if (res.success) {
         toast.success(res.message || '购买成功');
+        setBalancePayOpen(false);
+        setBalancePayPwd('');
+        setBalancePayProduct(null);
         fetchProducts();
         try {
           const bal = await incentiveApi.getBalance();
@@ -513,8 +541,8 @@ export default function MarketPage() {
                     <span>{product.sales || 0} 销量</span><span>|</span><span>{product.favoriteCount || 0} 收藏</span><span>|</span><span>{product.commentCount || 0} 评论</span><span>|</span><span>{product.likeCount || 0} 赞</span>
                   </div>
                   <div className="mt-2 flex items-center gap-2">
-                    <span className="text-lg font-bold text-primary">¥{product.price}</span>
-                    {product.originalPrice && (<span className="text-sm text-muted-foreground line-through">¥{product.originalPrice}</span>)}
+                    <span className="text-lg font-bold text-primary">{product.price} 积分</span>
+                    {product.originalPrice && (<span className="text-sm text-muted-foreground line-through">{product.originalPrice} 积分</span>)}
                   </div>
                   <div className="mt-3 flex gap-2">
                     {product.owner?.toLowerCase() === user?.web3Address?.toLowerCase() ? (
@@ -600,7 +628,7 @@ export default function MarketPage() {
               <div className="p-4 bg-muted rounded-lg space-y-2">
                 <div className="flex justify-between"><span className="text-muted-foreground">商品</span><span className="font-medium">{pendingOrder.productName}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">订单号</span><span className="text-sm">{pendingOrder.orderNo}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">金额</span><span className="text-lg font-bold text-primary">￥{pendingOrder.amount}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">金额</span><span className="text-lg font-bold text-primary">{pendingOrder.amount} 积分</span></div>
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">卖家地址</label>
@@ -659,6 +687,40 @@ export default function MarketPage() {
                 </div>
               </div>
               <p className="text-xs text-muted-foreground text-center">稍后支付可在"我的订单"中继续完成</p>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* 积分支付弹窗（含支付密码） */}
+      <Dialog open={balancePayOpen} onOpenChange={(o) => { if (!o) { setBalancePayPwd(''); } setBalancePayOpen(o); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>使用积分支付</DialogTitle></DialogHeader>
+          {balancePayProduct && (
+            <div className="space-y-4">
+              <div className="p-4 bg-muted rounded-lg space-y-2">
+                <div className="flex justify-between"><span className="text-muted-foreground">商品</span><span className="font-medium">{balancePayProduct.name}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">金额</span><span className="text-lg font-bold text-primary">{balancePayProduct.price} 积分</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">当前积分</span><span>{user?.totalIncentive ?? 0}</span></div>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">支付密码</label>
+                <Input
+                  type="password"
+                  placeholder="请输入 6-32 位支付密码"
+                  value={balancePayPwd}
+                  onChange={(e) => setBalancePayPwd(e.target.value)}
+                  maxLength={32}
+                  autoFocus
+                />
+                <p className="text-xs text-muted-foreground">如未设置，请前往 <Link href="/profile/settings" className="text-primary hover:underline">个人设置 - 安全</Link> 设置</p>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" className="flex-1" onClick={() => setBalancePayOpen(false)} disabled={payingWithBalance}>取消</Button>
+                <Button className="flex-1" onClick={handleConfirmBalancePay} disabled={payingWithBalance || balancePayPwd.length < 6}>
+                  {payingWithBalance ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />支付中...</> : '确认支付'}
+                </Button>
+              </div>
             </div>
           )}
         </DialogContent>

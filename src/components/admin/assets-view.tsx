@@ -95,7 +95,7 @@ export function AssetsView({ title = 'AI 资产管理', subtitle = '审核和管
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
-  const [statusFilter, setStatusFilter] = useState<string>('pending');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [keyword, setKeyword] = useState('');
   const [keywordInput, setKeywordInput] = useState('');
@@ -328,7 +328,7 @@ export function AssetsView({ title = 'AI 资产管理', subtitle = '审核和管
                           </div>
                         </td>
                         <td className="px-3 py-3 text-sm text-right font-bold whitespace-nowrap">
-                          {asset.price > 0 ? `¥${asset.price}` : '免费'}
+                          {asset.price > 0 ? `${asset.price} 积分` : '免费'}
                         </td>
                         <td className="px-3 py-3 text-sm whitespace-nowrap">
                           <Badge variant={statusColors[asset.status] || 'default'}>
@@ -438,7 +438,7 @@ export function AssetsView({ title = 'AI 资产管理', subtitle = '审核和管
                 </div>
                 <div>
                   <Label className="text-muted-foreground">价格</Label>
-                  <p className="mt-1">{selected.price > 0 ? `¥${selected.price}` : '免费'}</p>
+                  <p className="mt-1">{selected.price > 0 ? `${selected.price} 积分` : '免费'}</p>
                 </div>
                 <div>
                   <Label className="text-muted-foreground">所有者</Label>

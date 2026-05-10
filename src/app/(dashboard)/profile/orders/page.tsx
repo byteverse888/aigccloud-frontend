@@ -145,7 +145,7 @@ export default function OrdersPage() {
 
   const totalPages = Math.ceil(total / pageSize);
 
-  const renderOrderList = (_filterStatus?: string) => {
+  const renderOrderList = (filterStatus?: string) => {
     // 服务端已按 activeTab 过滤，直接使用 orders
     const filteredOrders = orders;
 

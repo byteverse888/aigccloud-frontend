@@ -77,6 +77,22 @@ export const userApi = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+
+  // 支付密码相关
+  getPaymentPasswordStatus: () =>
+    fetchApi<{ has_payment_password: boolean }>('/api/v1/users/payment-password/status'),
+
+  setPaymentPassword: (newPassword: string, oldPassword?: string) =>
+    fetchApi<{ success: boolean; message: string }>('/api/v1/users/payment-password', {
+      method: 'POST',
+      body: JSON.stringify({ new_password: newPassword, old_password: oldPassword }),
+    }),
+
+  verifyPaymentPassword: (password: string) =>
+    fetchApi<{ success: boolean }>('/api/v1/users/payment-password/verify', {
+      method: 'POST',
+      body: JSON.stringify({ password }),
+    }),
 };
 
 // Auth API
@@ -325,9 +341,30 @@ export const taskApi = {
     }),
 
   convertTaskToAsset: (taskId: string) =>
-    fetchApi<{ success: boolean; asset_id: string }>(
+    fetchApi<{
+      success: boolean;
+      asset_ids: string[];
+      converted_count: number;
+      skipped_count: number;
+      message?: string;
+    }>(
       `/api/v1/tasks/ai-task/${taskId}/convert`,
       { method: 'POST' }
+    ),
+
+  // 管理员/运营编辑 AI 任务（描述 / 状态 / 上传结果文件）
+  adminUpdateTask: (
+    taskObjectId: string,
+    data: {
+      description?: string;
+      status?: number;
+      results?: Array<{ url: string; thumbnail?: string; type?: string }>;
+      error_message?: string;
+    }
+  ) =>
+    fetchApi<{ success: boolean; task_id?: string; updated_fields?: string[] }>(
+      `/api/v1/tasks/admin/${taskObjectId}`,
+      { method: 'PUT', body: JSON.stringify(data) }
     ),
 };
 
@@ -1018,6 +1055,41 @@ listUsers: (params: { page?: number; limit?: number; role?: string } = {}) => {
   },
 };
 
+// Products API (用户端商品投诉与查询)
+export const productsApi = {
+  // 投诉商品
+  report: (productId: string, reason: string, description?: string) =>
+    fetchApi<{ success: boolean; message: string }>('/api/v1/products/report', {
+      method: 'POST',
+      body: JSON.stringify({ product_id: productId, reason, description }),
+    }),
+
+  // 获取指定商品的投诉列表（管理/运营）
+  getReports: (productId: string, params: { page?: number; limit?: number } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.page) qs.set('page', String(params.page));
+    if (params.limit) qs.set('limit', String(params.limit));
+    return fetchApi<{
+      data: Array<{
+        id: string;
+        reporterId: string;
+        reporterName: string;
+        reason: string;
+        reasonText: string;
+        description: string;
+        status: string;
+        createdAt: string;
+        processedAt?: string;
+        processedBy?: string;
+        processNote?: string;
+      }>;
+      total: number;
+      page: number;
+      limit: number;
+    }>(`/api/v1/products/${productId}/reports?${qs.toString()}`);
+  },
+};
+
 // Assets API
 export const assetsApi = {
   // 发布资产
@@ -1083,9 +1155,11 @@ export const assetsApi = {
     description?: string;
     category?: string;
     coverKey?: string;
+    cover_key?: string;
     copyright?: string;
     license?: string;
     tags?: string[];
+    price?: number;
   }) =>
     fetchApi<{ success: boolean; message: string }>(
       `/api/v1/assets/${assetId}`,
@@ -1099,6 +1173,27 @@ export const assetsApi = {
       { method: 'POST' }
     ),
 
+  // 批量提交审核
+  batchSubmit: (
+    items: Array<{
+      asset_id: string;
+      name?: string;
+      description?: string;
+      category?: string;
+      price: number;
+    }>
+  ) =>
+    fetchApi<{
+      success: boolean;
+      total: number;
+      success_count: number;
+      failed_count: number;
+      results: Array<{ asset_id: string; success: boolean; error?: string; product_id?: string }>;
+    }>('/api/v1/assets/batch-submit', {
+      method: 'POST',
+      body: JSON.stringify({ items }),
+    }),
+
   // 购买资产
   purchase: (assetId: string) =>
     fetchApi<{
@@ -1110,13 +1205,16 @@ export const assetsApi = {
     }>(`/api/v1/assets/${assetId}/purchase`, { method: 'POST' }),
 
   // 使用账户积分余额购买单个商品
-  purchaseWithBalance: (assetId: string) =>
+  purchaseWithBalance: (assetId: string, paymentPassword: string) =>
     fetchApi<{
       success: boolean;
       order_no: string;
       amount: number;
       message: string;
-    }>(`/api/v1/assets/${assetId}/purchase-with-balance`, { method: 'POST' }),
+    }>(`/api/v1/assets/${assetId}/purchase-with-balance`, {
+      method: 'POST',
+      body: JSON.stringify({ payment_password: paymentPassword }),
+    }),
 
   // 获取已购买的资产
   getPurchases: (params: { page?: number; limit?: number } = {}) => {
@@ -1178,14 +1276,17 @@ export const assetsApi = {
       }>('/api/v1/assets/cart/checkout', { method: 'POST' }),
 
     // 使用账户积分余额结算购物车（批量支付）
-    checkoutWithBalance: () =>
+    checkoutWithBalance: (paymentPassword: string) =>
       fetchApi<{
         success: boolean;
         orders: Array<{ order_no: string; asset_id: string; name: string; amount: number }>;
         total_amount: number;
         balance_after: number;
         message: string;
-      }>('/api/v1/assets/cart/checkout-with-balance', { method: 'POST' }),
+      }>('/api/v1/assets/cart/checkout-with-balance', {
+        method: 'POST',
+        body: JSON.stringify({ payment_password: paymentPassword }),
+      }),
   },
 };
 
@@ -1200,6 +1301,7 @@ export default {
   wallet: walletApi,
   storage: storageApi,
   assets: assetsApi,
+  products: productsApi,
   operator: {
     getOrders: (params: { page?: number; limit?: number; status?: string; search?: string } = {}) => {
       const qs = new URLSearchParams();
