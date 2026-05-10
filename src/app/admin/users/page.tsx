@@ -384,7 +384,7 @@ export default function AdminUsersPage() {
                               </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => openRecharge(user)}>
                                 <Coins className="mr-2 h-4 w-4" />
-                                充值金币
+                                充值余额
                               </DropdownMenuItem>
                               {user.status === 'banned' ? (
                                 <DropdownMenuItem onClick={() => handleToggleBan(user)} className="text-green-600">
@@ -499,14 +499,14 @@ export default function AdminUsersPage() {
       <Dialog open={rechargeOpen} onOpenChange={setRechargeOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>为用户充值金币</DialogTitle>
+            <DialogTitle>为用户充值余额</DialogTitle>
             <DialogDescription>
-              为用户 {selectedUser?.username} 充值金币
+              为用户 {selectedUser?.username} 充值账户积分余额
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div>
-              <label className="text-sm font-medium">充值金额（金币）</label>
+              <label className="text-sm font-medium">充值金额（积分）</label>
               <Input
                 type="number"
                 value={rechargeAmount}
@@ -520,10 +520,10 @@ export default function AdminUsersPage() {
               <div className="rounded-md bg-green-50 p-4 text-green-800">
                 <p className="font-medium">充值成功！</p>
                 <p className="mt-1">
-                  充值金额：<span className="font-mono font-bold">{rechargeResult.amount}</span> 金币
+                  充值金额：<span className="font-mono font-bold">{rechargeResult.amount}</span> 积分
                 </p>
                 <p className="mt-1">
-                  新余额：<span className="font-mono font-bold">{rechargeResult.new_balance}</span> 金币
+                  新余额：<span className="font-mono font-bold">{rechargeResult.new_balance}</span> 积分
                 </p>
               </div>
             )}

@@ -1208,36 +1208,11 @@ export async function cancelOrder(orderId: string) {
   return updateObject('Order', orderId, { status: 'cancelled' });
 }
 
-// 使用积分余额购买商品（调用FastAPI，需 JWT）
+// 使用积分余额购买商品（调用 FastAPI，依赖 api.ts 自动注入 JWT）
 export async function purchaseWithBalance(assetId: string) {
   try {
-    let token: string | null = null;
-    if (typeof window !== 'undefined') {
-      try {
-        const raw = window.localStorage.getItem('auth-storage');
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          token = parsed?.state?.user?.jwtToken || null;
-        }
-      } catch {
-        token = null;
-      }
-    }
-    if (!token) {
-      return { success: false, error: '登录已过期，请重新登录' };
-    }
-    const base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-    const response = await fetch(`${base}/api/v1/assets/${assetId}/purchase-with-balance`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      return { success: false, error: data?.detail || data?.message || '支付失败' };
-    }
+    const { assetsApi } = await import('@/lib/api');
+    const data = await assetsApi.purchaseWithBalance(assetId);
     return {
       success: true,
       orderNo: data?.order_no,
@@ -1245,7 +1220,7 @@ export async function purchaseWithBalance(assetId: string) {
       message: data?.message || '购买成功',
     };
   } catch (error) {
-    return { success: false, error: (error as Error).message };
+    return { success: false, error: (error as Error).message || '支付失败' };
   }
 }
 

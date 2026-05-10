@@ -538,8 +538,7 @@ export function ProductsView({
                     <th className="px-3 py-3 text-left text-xs font-medium whitespace-nowrap w-[90px]">状态</th>
                     <th className="px-3 py-3 text-right text-xs font-medium whitespace-nowrap w-[70px]">销量</th>
                     <th className="px-3 py-3 text-right text-xs font-medium whitespace-nowrap w-[70px]">投诉</th>
-                    <th className="px-3 py-3 text-left text-xs font-medium whitespace-nowrap w-[150px]">审核人/时间</th>
-                    <th className="px-3 py-3 text-left text-xs font-medium whitespace-nowrap w-[150px]">创建时间</th>
+                    <th className="px-3 py-3 text-left text-xs font-medium whitespace-nowrap w-[180px]">创建/审核时间</th>
                     <th className="px-3 py-3 text-left text-xs font-medium whitespace-nowrap w-[220px]">操作</th>
                   </tr>
                 </thead>
@@ -629,20 +628,27 @@ export function ProductsView({
                             <span className="text-muted-foreground">0</span>
                           )}
                         </td>
-                        <td className="px-3 py-3 text-xs text-muted-foreground whitespace-nowrap">
-                          {product.reviewedAt ? (
-                            <div className="flex flex-col gap-0.5">
-                              <span className="text-foreground" title={product.reviewedBy}>
-                                {product.reviewerName || product.reviewedBy || '-'}
-                              </span>
-                              <span>{formatDate(product.reviewedAt)}</span>
+                        <td className="px-3 py-3 text-xs whitespace-nowrap">
+                          <div className="flex flex-col gap-1">
+                            <div className="text-muted-foreground">
+                              <span className="text-[11px]">创建：</span>
+                              <span>{formatDate(product.createdAt)}</span>
                             </div>
-                          ) : (
-                            <span>-</span>
-                          )}
-                        </td>
-                        <td className="px-3 py-3 text-sm whitespace-nowrap text-muted-foreground">
-                          {formatDate(product.createdAt)}
+                            {product.reviewedAt ? (
+                              <div className="text-muted-foreground">
+                                <span className="text-[11px]">审核：</span>
+                                <span
+                                  className="text-foreground font-medium"
+                                  title={product.reviewedBy}
+                                >
+                                  {product.reviewerName || product.reviewedBy || '-'}
+                                </span>
+                                <span className="ml-1">{formatDate(product.reviewedAt)}</span>
+                              </div>
+                            ) : (
+                              <div className="text-muted-foreground text-[11px]">审核：未审核</div>
+                            )}
+                          </div>
                         </td>
                         <td className="px-3 py-3 text-sm whitespace-nowrap">
                           <div className="flex gap-1 flex-wrap">

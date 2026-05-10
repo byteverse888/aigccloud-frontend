@@ -1109,6 +1109,15 @@ export const assetsApi = {
       message?: string;
     }>(`/api/v1/assets/${assetId}/purchase`, { method: 'POST' }),
 
+  // 使用账户积分余额购买单个商品
+  purchaseWithBalance: (assetId: string) =>
+    fetchApi<{
+      success: boolean;
+      order_no: string;
+      amount: number;
+      message: string;
+    }>(`/api/v1/assets/${assetId}/purchase-with-balance`, { method: 'POST' }),
+
   // 获取已购买的资产
   getPurchases: (params: { page?: number; limit?: number } = {}) => {
     const qs = new URLSearchParams();
@@ -1167,6 +1176,16 @@ export const assetsApi = {
         total: number;
         message: string;
       }>('/api/v1/assets/cart/checkout', { method: 'POST' }),
+
+    // 使用账户积分余额结算购物车（批量支付）
+    checkoutWithBalance: () =>
+      fetchApi<{
+        success: boolean;
+        orders: Array<{ order_no: string; asset_id: string; name: string; amount: number }>;
+        total_amount: number;
+        balance_after: number;
+        message: string;
+      }>('/api/v1/assets/cart/checkout-with-balance', { method: 'POST' }),
   },
 };
 

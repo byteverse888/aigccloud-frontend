@@ -1,68 +1,49 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import { ArrowLeft, CreditCard, Wallet, QrCode, Loader2, CheckCircle } from 'lucide-react';
+import { ArrowLeft, CreditCard, Wallet, Loader2, CheckCircle } from 'lucide-react';
 import { useCartStore, useAuthStore } from '@/store';
-import { paymentApi } from '@/lib/api';
+import { assetsApi, incentiveApi } from '@/lib/api';
 import toast from 'react-hot-toast';
 import Link from 'next/link';
 
-type PaymentMethod = 'wechat' | 'alipay';
-
 export default function CheckoutPage() {
   const router = useRouter();
-  const { user } = useAuthStore();
-  const { items, getTotalPrice, clearCart } = useCartStore();
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('wechat');
+  const { user, setUser } = useAuthStore();
+  const { items, getTotalPrice, fetchCart } = useCartStore();
   const [isProcessing, setIsProcessing] = useState(false);
-  const [orderCreated, setOrderCreated] = useState(false);
-  const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
-  const [orderId, setOrderId] = useState<string | null>(null);
-  const [orderNo, setOrderNo] = useState<string | null>(null);
-  const [polling, setPolling] = useState(false);
+  const [balance, setBalance] = useState<number | null>(null);
+  const [balanceLoading, setBalanceLoading] = useState(true);
 
   const totalPrice = getTotalPrice();
 
+  // 拉取最新账户余额
   useEffect(() => {
-    if (items.length === 0 && !orderCreated) {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await incentiveApi.getBalance();
+        if (!cancelled) setBalance(Number(res?.balance || 0));
+      } catch {
+        if (!cancelled) setBalance(Number(user?.totalIncentive || 0));
+      } finally {
+        if (!cancelled) setBalanceLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.totalIncentive]);
+
+  useEffect(() => {
+    if (items.length === 0) {
       router.push('/cart');
     }
-  }, [items, orderCreated, router]);
-
-  // 轮询订单状态
-  const pollOrderStatus = useCallback(async (oid: string) => {
-    if (!oid) return;
-    
-    try {
-      const result = await paymentApi.queryOrder(oid);
-      if (result.status === 'paid') {
-        setPolling(false);
-        await clearCart();
-        toast.success('支付成功！');
-        setTimeout(() => {
-          router.push('/profile/orders');
-        }, 1500);
-      }
-    } catch {
-      // 忽略错误，继续轮询
-    }
-  }, [clearCart, router]);
-
-  useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (polling && orderId) {
-      interval = setInterval(() => {
-        pollOrderStatus(orderId);
-      }, 3000);
-    }
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [polling, orderId, pollOrderStatus]);
+  }, [items, router]);
 
   const handlePayment = async () => {
     if (!user?.objectId) {
@@ -70,69 +51,44 @@ export default function CheckoutPage() {
       router.push('/login');
       return;
     }
-
     if (items.length === 0) {
       toast.error('购物车为空');
       return;
     }
+    // 本地预判余额（后端仍会再校验一次）
+    if (balance !== null && balance < totalPrice) {
+      toast.error(`积分余额不足，需要 ${totalPrice} 积分，当前 ${balance}`);
+      return;
+    }
 
     setIsProcessing(true);
-
     try {
-      // 调用后端创建购物车订单
-      const orderResult = await paymentApi.createCartOrder({
-        user_id: user.objectId,
-        items: items.map(item => ({
-          product_id: item.productId || item.id,
-          name: item.name,
-          price: item.price,
-          quantity: item.quantity,
-        })),
-        payment_method: paymentMethod,
-      });
-
-      setOrderId(orderResult.order_id);
-      setOrderNo(orderResult.order_no);
-      setOrderCreated(true);
-
-      // 生成支付二维码
-      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(
-        orderResult.qr_code || `${paymentMethod === 'wechat' ? 'weixin' : 'alipay'}://pay?order=${orderResult.order_no}&amount=${totalPrice}`
-      )}`;
-      setQrCodeUrl(qrUrl);
-
-      toast.success('订单创建成功，请扫码支付');
-      
-      // 开始轮询订单状态
-      setPolling(true);
-
+      const res = await assetsApi.cart.checkoutWithBalance();
+      toast.success(res.message || '支付成功');
+      // 同步更新本地余额展示与 auth store
+      if (typeof res.balance_after === 'number') {
+        setBalance(res.balance_after);
+        if (user) {
+          setUser({ ...user, totalIncentive: res.balance_after });
+        }
+      }
+      // 刷新购物车（后端已清空对应项）
+      await fetchCart();
+      setTimeout(() => {
+        router.push('/profile/orders');
+      }, 1200);
     } catch (error) {
-      toast.error((error as Error).message || '创建订单失败');
+      toast.error((error as Error).message || '支付失败');
     } finally {
       setIsProcessing(false);
     }
   };
 
-  // 测试模式：模拟支付
-  const handleMockPay = async () => {
-    if (!orderId) return;
-    
-    try {
-      await paymentApi.mockPay(orderId);
-      setPolling(false);
-      await clearCart();
-      toast.success('支付成功！');
-      setTimeout(() => {
-        router.push('/profile/orders');
-      }, 1500);
-    } catch (error) {
-      toast.error((error as Error).message || '模拟支付失败');
-    }
-  };
-
-  if (items.length === 0 && !orderCreated) {
+  if (items.length === 0) {
     return null;
   }
+
+  const insufficient = balance !== null && balance < totalPrice;
 
   return (
     <div className="space-y-6">
@@ -145,7 +101,7 @@ export default function CheckoutPage() {
 
       <div>
         <h1 className="text-3xl font-bold tracking-tight">确认订单</h1>
-        <p className="text-muted-foreground">请确认您的订单信息并选择支付方式</p>
+        <p className="text-muted-foreground">请确认订单信息后使用账户积分余额完成支付</p>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -168,59 +124,47 @@ export default function CheckoutPage() {
                   </div>
                   <div className="flex-1">
                     <h3 className="font-medium">{item.name}</h3>
-                    <p className="text-sm text-muted-foreground">数量: {item.quantity}</p>
+                    <p className="text-sm text-muted-foreground">数字资产 · 仅限购买 1 份</p>
                   </div>
                   <div className="text-right">
-                    <p className="font-bold">¥{(item.price * item.quantity).toFixed(2)}</p>
-                    <p className="text-sm text-muted-foreground">¥{item.price} × {item.quantity}</p>
+                    <p className="font-bold">{item.price} 积分</p>
                   </div>
                 </div>
               ))}
             </CardContent>
           </Card>
 
-          {/* 支付方式选择 */}
+          {/* 支付方式（仅账户余额） */}
           <Card>
             <CardHeader>
               <CardTitle>支付方式</CardTitle>
-              <CardDescription>请选择您的支付方式</CardDescription>
+              <CardDescription>当前仅支持账户积分余额支付</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div
-                className={`flex items-center gap-4 p-4 border rounded-lg cursor-pointer transition-colors ${
-                  paymentMethod === 'wechat' ? 'border-green-500 bg-green-500/5' : 'hover:bg-muted/50'
-                }`}
-                onClick={() => !orderCreated && setPaymentMethod('wechat')}
-              >
-                <div className="h-10 w-10 rounded-full bg-green-500 flex items-center justify-center">
-                  <Wallet className="h-5 w-5 text-white" />
+            <CardContent>
+              <div className="flex items-center gap-4 p-4 border-2 border-primary rounded-lg bg-primary/5">
+                <div className="h-10 w-10 rounded-full bg-primary flex items-center justify-center">
+                  <Wallet className="h-5 w-5 text-primary-foreground" />
                 </div>
                 <div className="flex-1">
-                  <p className="font-medium">微信支付</p>
-                  <p className="text-sm text-muted-foreground">推荐使用微信扫码支付</p>
+                  <p className="font-medium">账户积分余额</p>
+                  <p className="text-sm text-muted-foreground">
+                    当前余额：
+                    {balanceLoading ? (
+                      <Loader2 className="inline-block ml-1 h-3 w-3 animate-spin" />
+                    ) : (
+                      <span className={insufficient ? 'text-destructive font-medium' : 'text-foreground font-medium'}>
+                        {balance ?? 0} 积分
+                      </span>
+                    )}
+                  </p>
                 </div>
-                {paymentMethod === 'wechat' && (
-                  <CheckCircle className="h-5 w-5 text-green-500" />
-                )}
+                <CheckCircle className="h-5 w-5 text-primary" />
               </div>
-
-              <div
-                className={`flex items-center gap-4 p-4 border rounded-lg cursor-pointer transition-colors ${
-                  paymentMethod === 'alipay' ? 'border-blue-500 bg-blue-500/5' : 'hover:bg-muted/50'
-                }`}
-                onClick={() => !orderCreated && setPaymentMethod('alipay')}
-              >
-                <div className="h-10 w-10 rounded-full bg-blue-500 flex items-center justify-center">
-                  <CreditCard className="h-5 w-5 text-white" />
-                </div>
-                <div className="flex-1">
-                  <p className="font-medium">支付宝</p>
-                  <p className="text-sm text-muted-foreground">使用支付宝扫码支付</p>
-                </div>
-                {paymentMethod === 'alipay' && (
-                  <CheckCircle className="h-5 w-5 text-blue-500" />
-                )}
-              </div>
+              {insufficient && !balanceLoading && (
+                <p className="mt-3 text-sm text-destructive">
+                  积分余额不足，还差 {totalPrice - (balance ?? 0)} 积分。可前往「充值」页面补充积分后再来支付。
+                </p>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -230,86 +174,50 @@ export default function CheckoutPage() {
           <Card>
             <CardHeader>
               <CardTitle>订单摘要</CardTitle>
-              {orderNo && (
-                <CardDescription>订单号: {orderNo}</CardDescription>
-              )}
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">商品总价</span>
-                <span>¥{totalPrice.toFixed(2)}</span>
+                <span>{totalPrice} 积分</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">优惠折扣</span>
-                <span className="text-green-500">-¥0.00</span>
+                <span className="text-green-500">-0</span>
               </div>
               <Separator />
               <div className="flex justify-between text-lg font-bold">
-                <span>应付金额</span>
-                <span className="text-primary">¥{totalPrice.toFixed(2)}</span>
+                <span>应付积分</span>
+                <span className="text-primary">{totalPrice} 积分</span>
               </div>
 
-              {!orderCreated ? (
-                <Button
-                  className="w-full"
-                  size="lg"
-                  onClick={handlePayment}
-                  disabled={isProcessing}
-                >
-                  {isProcessing ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      创建订单中...
-                    </>
-                  ) : (
-                    <>
-                      <CreditCard className="mr-2 h-4 w-4" />
-                      确认支付
-                    </>
-                  )}
-                </Button>
-              ) : (
-                <div className="text-center space-y-4">
-                  <p className="text-sm text-muted-foreground">
-                    请使用{paymentMethod === 'wechat' ? '微信' : '支付宝'}扫描下方二维码完成支付
-                  </p>
-                  {qrCodeUrl && (
-                    <div className="flex justify-center">
-                      <div className="p-4 bg-white rounded-lg border">
-                        <img src={qrCodeUrl} alt="支付二维码" className="w-48 h-48" />
-                      </div>
-                    </div>
-                  )}
-                  <p className="text-xs text-muted-foreground">
-                    <Loader2 className="inline-block mr-1 h-3 w-3 animate-spin" />
-                    等待支付中...
-                  </p>
-                  
-                  {/* 测试模式：模拟支付按钮 */}
-                  <div className="pt-4 border-t">
-                    <p className="text-xs text-muted-foreground mb-2">
-                      测试模式：点击下方按钮模拟支付成功
-                    </p>
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      onClick={handleMockPay}
-                    >
-                      模拟支付成功
-                    </Button>
-                  </div>
-                </div>
-              )}
+              <Button
+                className="w-full"
+                size="lg"
+                onClick={handlePayment}
+                disabled={isProcessing || balanceLoading || insufficient}
+              >
+                {isProcessing ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    支付中...
+                  </>
+                ) : insufficient ? (
+                  '余额不足'
+                ) : (
+                  <>
+                    <Wallet className="mr-2 h-4 w-4" />
+                    确认支付
+                  </>
+                )}
+              </Button>
             </CardContent>
           </Card>
 
           <Card>
             <CardContent className="pt-6">
               <div className="flex items-start gap-2 text-sm text-muted-foreground">
-                <QrCode className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                <p>
-                  支付完成后，您购买的商品将自动添加到您的资产中，可在「我的资产」中查看和下载。
-                </p>
+                <CheckCircle className="h-4 w-4 mt-0.5 flex-shrink-0 text-primary" />
+                <p>支付成功后，商品将自动添加到「我的资产」中，可随时查看和下载。</p>
               </div>
             </CardContent>
           </Card>

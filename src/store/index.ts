@@ -150,7 +150,22 @@ export const useCartStore = create<CartState>()((set, get) => ({
     }
   },
   addItem: async (item) => {
-    if (!get().ownerUserId) {
+    // 兼容时序异常：ownerUserId 未同步时，从 auth store 兼毕开启
+    let ownerId = get().ownerUserId;
+    if (!ownerId) {
+      try {
+        const authUser = useAuthStore.getState().user;
+        const role = authUser?.role;
+        const isBackendUser = role === 'admin' || role === 'operator';
+        if (authUser?.objectId && !isBackendUser) {
+          await get().setOwner(authUser.objectId);
+          ownerId = get().ownerUserId;
+        }
+      } catch {
+        // 忽略
+      }
+    }
+    if (!ownerId) {
       throw new Error('请先登录');
     }
     // 前端先做重复检查，避免穿透后端报错
