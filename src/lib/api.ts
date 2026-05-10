@@ -679,6 +679,8 @@ listUsers: (params: { page?: number; limit?: number; role?: string } = {}) => {
         username: string;
         results?: unknown;
         errorMessage?: string;
+        data?: Record<string, unknown>;
+        cost?: number;
         created_at: string;
         updated_at?: string;
       }>;
@@ -687,6 +689,12 @@ listUsers: (params: { page?: number; limit?: number; role?: string } = {}) => {
       limit: number;
     }>(`/api/v1/tasks/admin/list?${qs.toString()}`);
   },
+
+  // 管理员/运营删除 AI 任务
+  deleteAdminTask: (taskObjectId: string) =>
+    fetchApi<{ success: boolean; task_id?: string }>(`/api/v1/tasks/admin/${taskObjectId}`, {
+      method: 'DELETE',
+    }),
 
   // AI 资产列表（管理员/运营）
   listAdminAssets: (params: { page?: number; limit?: number; status?: string; category?: string; keyword?: string; ownerId?: string } = {}) => {

@@ -261,121 +261,128 @@ export default function AITasksPage() {
           <p>暂无任务</p>
         </div>
       ) : (
-        <div className="space-y-3">
-          {tasks.map((task) => {
-            const typeInfo = typeConfig[task.type] || { label: task.type, icon: Image };
-            const statusInfo = statusConfig[task.status] || statusConfig[0];
-            const TypeIcon = typeInfo.icon;
-            const StatusIcon = statusInfo.icon;
-            const prompt = task.data?.prompt || '';
-
-            return (
-              <Card key={task.objectId} className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => handleViewDetail(task)}>
-                <CardContent className="p-4">
-                  <div className="flex items-start gap-4">
-                    {/* 类型图标 */}
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-muted">
-                      <TypeIcon className="h-6 w-6 text-muted-foreground" />
-                    </div>
-
-                    {/* 任务信息 */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Badge variant={statusInfo.color}>
-                          <StatusIcon className={`mr-1 h-3 w-3 ${task.status === 1 ? 'animate-spin' : ''}`} />
-                          {statusInfo.label}
-                        </Badge>
-                        <span className="text-sm text-muted-foreground">{typeInfo.label}</span>
-                        <span className="text-xs text-muted-foreground">{task.model}</span>
-                      </div>
-                      <p className="text-sm line-clamp-2 mb-2">{prompt || '无提示词'}</p>
-                      <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                        <span>{formatDate(task.createdAt)}</span>
-                        {task.data?.style && <span>风格: {task.data.style}</span>}
-                        {task.data?.size && <span>尺寸: {task.data.size}</span>}
-                        {task.cost !== undefined && task.cost > 0 && <span>消耗: {task.cost}金币</span>}
-                      </div>
-                      {task.errorMessage && (
-                        <p className="mt-2 text-sm text-destructive line-clamp-1">{task.errorMessage}</p>
-                      )}
-                    </div>
-
-                    {/* 操作按钮 */}
-                    <div className="flex gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
-                      <Button size="sm" variant="outline" onClick={() => handleViewDetail(task)}>
-                        <Eye className="h-4 w-4" />
-                      </Button>
-                      {(task.status === 2 || task.status === 4) && task.results && task.results.length > 0 && (
-                        <Button size="sm" variant="outline" onClick={() => handleDownload(task.results![0].url)}>
-                          <Download className="h-4 w-4" />
-                        </Button>
-                      )}
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="text-destructive hover:text-destructive"
-                        onClick={() => task.objectId && handleDelete(task.objectId)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-
-                  {/* 结果预览 */}
-                  {(task.status === 2 || task.status === 4) && task.results && task.results.length > 0 && (
-                    <div className="mt-4 flex gap-2 overflow-x-auto">
-                      {task.results.slice(0, 4).map((result, idx) => (
-                        <div key={idx} className="h-16 w-16 shrink-0 rounded-lg bg-muted overflow-hidden">
-                          {(task.type === 'txt2img' || task.type === 'img2img') ? (
-                            <img src={result.thumbnail || result.url} alt={`结果${idx + 1}`} className="h-full w-full object-cover" />
-                          ) : (
-                            <div className="h-full w-full flex items-center justify-center">
-                              <TypeIcon className="h-6 w-6 text-muted-foreground" />
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                      {task.results.length > 4 && (
-                        <div className="h-16 w-16 shrink-0 rounded-lg bg-muted flex items-center justify-center text-sm text-muted-foreground">
-                          +{task.results.length - 4}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            );
-          })}
-
-          {/* 分页 */}
-          {total > 0 && (
-            <div className="flex items-center justify-between pt-4">
-              <p className="text-sm text-muted-foreground">
-                共 {total} 条记录，第 {page}/{totalPages || 1} 页
-              </p>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={page <= 1}
-                  onClick={() => setPage((p) => p - 1)}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                  上一页
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={page >= totalPages}
-                  onClick={() => setPage((p) => p + 1)}
-                >
-                  下一页
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
+        <Card>
+          <CardContent className="p-0">
+            <div className="rounded-md overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b bg-muted/50">
+                    <th className="px-3 py-3 text-left text-xs font-medium whitespace-nowrap w-[180px]">任务ID</th>
+                    <th className="px-3 py-3 text-left text-xs font-medium whitespace-nowrap w-[100px]">类型</th>
+                    <th className="px-3 py-3 text-left text-xs font-medium whitespace-nowrap w-[140px]">模型</th>
+                    <th className="px-3 py-3 text-left text-xs font-medium whitespace-nowrap w-[90px]">状态</th>
+                    <th className="px-3 py-3 text-left text-xs font-medium w-[300px]">任务描述</th>
+                    <th className="px-3 py-3 text-left text-xs font-medium whitespace-nowrap w-[150px]">创建时间</th>
+                    <th className="px-3 py-3 text-left text-xs font-medium whitespace-nowrap w-[150px]">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tasks.map((task) => {
+                    const typeInfo = typeConfig[task.type] || { label: task.type, icon: Image };
+                    const statusInfo = statusConfig[task.status] || statusConfig[0];
+                    const StatusIcon = statusInfo.icon;
+                    const prompt = task.data?.prompt || '';
+                    const taskId = task.taskId || task.objectId || '';
+                    const canDownload =
+                      (task.status === 2 || task.status === 4) &&
+                      !!task.results &&
+                      task.results.length > 0;
+                    return (
+                      <tr key={task.objectId} className="border-b hover:bg-muted/30">
+                        <td className="px-3 py-3 text-sm">
+                          <button
+                            type="button"
+                            className="font-mono text-xs text-primary hover:underline truncate max-w-[160px] text-left"
+                            title={taskId}
+                            onClick={() => handleViewDetail(task)}
+                          >
+                            {taskId || '-'}
+                          </button>
+                        </td>
+                        <td className="px-3 py-3 text-sm whitespace-nowrap">{typeInfo.label}</td>
+                        <td className="px-3 py-3 text-sm">
+                          <div className="truncate max-w-[130px]" title={task.model || ''}>
+                            {task.model || '-'}
+                          </div>
+                        </td>
+                        <td className="px-3 py-3 text-sm whitespace-nowrap">
+                          <Badge variant={statusInfo.color}>
+                            <StatusIcon
+                              className={`mr-1 h-3 w-3 ${task.status === 1 ? 'animate-spin' : ''}`}
+                            />
+                            {statusInfo.label}
+                          </Badge>
+                        </td>
+                        <td className="px-3 py-3 text-sm">
+                          <div className="truncate max-w-[300px]" title={prompt || ''}>
+                            {prompt || <span className="text-muted-foreground">-</span>}
+                          </div>
+                        </td>
+                        <td className="px-3 py-3 text-sm whitespace-nowrap text-muted-foreground">
+                          {formatDate(task.createdAt)}
+                        </td>
+                        <td className="px-3 py-3 text-sm whitespace-nowrap">
+                          <div className="flex gap-1">
+                            <Button size="sm" variant="outline" onClick={() => handleViewDetail(task)}>
+                              <Eye className="h-4 w-4 mr-1" />
+                              详情
+                            </Button>
+                            {canDownload && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleDownload(task.results![0].url)}
+                              >
+                                <Download className="h-4 w-4" />
+                              </Button>
+                            )}
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-destructive hover:text-destructive"
+                              onClick={() => task.objectId && handleDelete(task.objectId)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
-          )}
-        </div>
+
+            {/* 分页 */}
+            {total > 0 && (
+              <div className="flex items-center justify-between p-4 border-t">
+                <p className="text-sm text-muted-foreground">
+                  共 {total} 条记录，第 {page}/{totalPages || 1} 页
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={page <= 1}
+                    onClick={() => setPage((p) => p - 1)}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    上一页
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={page >= totalPages}
+                    onClick={() => setPage((p) => p + 1)}
+                  >
+                    下一页
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       )}
 
       {/* 任务详情弹窗 */}

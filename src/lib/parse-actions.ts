@@ -796,9 +796,9 @@ export async function initMockProducts(forceCreate = false) {
     { name: '赛博朋克风格套图', category: 'image', price: 39, description: '赛博朋克风格的城市场景套图', cover: 'https://picsum.photos/seed/product4/400/300', status: 'approved' as const },
     { name: '自然白噪音合集', category: 'audio', price: 9, description: '放松的自然白噪音', cover: 'https://picsum.photos/seed/product5/400/300', status: 'approved' as const },
     { name: 'Q版游戏角色', category: 'image', price: 59, description: 'Q版风格的游戏角色设计', cover: 'https://picsum.photos/seed/product6/400/300', status: 'approved' as const },
-    { name: '古风水墨画套图', category: 'image', price: 79, description: '中国风水墨画风格插画', cover: 'https://picsum.photos/seed/product7/400/300', status: 'pending' as const },
-    { name: '说唱伴奏曲', category: 'audio', price: 39, description: 'AI生成的说唱伴奏曲', cover: 'https://picsum.photos/seed/product8/400/300', status: 'draft' as const },
-    { name: '产品宣传视频', category: 'video', price: 99, description: 'AI生成的产品宣传视频', cover: 'https://picsum.photos/seed/product9/400/300', status: 'offline' as const },
+    { name: '古风水墨画套图', category: 'image', price: 79, description: '中国风水墨画风格插画', cover: 'https://picsum.photos/seed/product7/400/300', status: 'approved' as const },
+    { name: '说唱伴奏曲', category: 'audio', price: 39, description: 'AI生成的说唱伴奏曲', cover: 'https://picsum.photos/seed/product8/400/300', status: 'approved' as const },
+    { name: '产品宣传视频', category: 'video', price: 99, description: 'AI生成的产品宣传视频', cover: 'https://picsum.photos/seed/product9/400/300', status: 'approved' as const },
     { name: '抽象艺术套图', category: 'image', price: 45, description: '抗象派风格的艺术插画', cover: 'https://picsum.photos/seed/product10/400/300', status: 'approved' as const },
   ];
 
@@ -855,10 +855,10 @@ export async function initUserAIIPAssets(userId: string, userAddress: string, us
     { name: '我的AI风景画', category: 'image', price: 35, description: '自己创作的风景插画', cover: 'https://picsum.photos/seed/aiip1/400/300', status: 'approved' as const },
     { name: '原创背景音乐', category: 'audio', price: 25, description: '原创AI背景音乐', cover: 'https://picsum.photos/seed/aiip2/400/300', status: 'approved' as const },
     { name: '动态Logo设计', category: 'video', price: 88, description: 'AI生成的动态Logo', cover: 'https://picsum.photos/seed/aiip3/400/300', status: 'approved' as const },
-    { name: '商业插画套图', category: 'image', price: 128, description: '商用级别的AI插画', cover: 'https://picsum.photos/seed/aiip4/400/300', status: 'pending' as const },
+    { name: '商业插画套图', category: 'image', price: 128, description: '商用级别的AI插画', cover: 'https://picsum.photos/seed/aiip4/400/300', status: 'approved' as const },
     { name: '放松音乐合集', category: 'audio', price: 18, description: '放松身心的音乐', cover: 'https://picsum.photos/seed/aiip5/400/300', status: 'approved' as const },
-    { name: '科幻场景设计', category: 'image', price: 66, description: '未来科幻风格场景', cover: 'https://picsum.photos/seed/aiip6/400/300', status: 'draft' as const },
-    { name: '品牌宣传短片', category: 'video', price: 199, description: '品牌宣传短视频', cover: 'https://picsum.photos/seed/aiip7/400/300', status: 'offline' as const },
+    { name: '科幻场景设计', category: 'image', price: 66, description: '未来科幻风格场景', cover: 'https://picsum.photos/seed/aiip6/400/300', status: 'approved' as const },
+    { name: '品牌宣传短片', category: 'video', price: 199, description: '品牌宣传短视频', cover: 'https://picsum.photos/seed/aiip7/400/300', status: 'approved' as const },
     { name: '游戏UI素材', category: 'image', price: 45, description: '游戏界面UI素材包', cover: 'https://picsum.photos/seed/aiip8/400/300', status: 'approved' as const },
     { name: '播客片头音乐', category: 'audio', price: 29, description: '播客节目片头音乐', cover: 'https://picsum.photos/seed/aiip9/400/300', status: 'approved' as const },
     { name: '数字艺术NFT图', category: 'image', price: 299, description: '限量版数字艺术作品', cover: 'https://picsum.photos/seed/aiip10/400/300', status: 'approved' as const },
@@ -916,7 +916,7 @@ export async function clearUserAIIPAssets(userAddress: string) {
 }
 
 // 为商城创建模拟商品数据（供购买测试）
-export async function initMarketMockProducts(userAddress: string) {
+export async function initMarketMockProducts(userAddress: string, userId?: string, userName?: string) {
   if (!userAddress) {
     return { success: false, error: '请先登录' };
   }
@@ -939,8 +939,10 @@ export async function initMarketMockProducts(userAddress: string) {
       await createObject('Product', {
         ...product,
         status: 'approved',
-        creatorId: userAddress,
-        creatorName: '当前用户',
+        // creatorId 使用 userId（objectId），用于前端与当前用户 objectId 比对；回退到地址
+        creatorId: userId || userAddress,
+        // creatorName 写入真实用户名，避免前端硬编码显示“当前用户”
+        creatorName: userName || '',
         creatorAddress: userAddress,
         owner: userAddress, // 当前用户拥有
         mockType: 'market', // 标记为商城模拟数据

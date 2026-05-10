@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
 import { useAuthStore, useCartStore } from '@/store';
 import { getUserFavorites, toggleFavorite } from '@/lib/parse-actions';
+import { stripEmailFromName } from '@/lib/utils';
 import toast from 'react-hot-toast';
 
 interface FavoriteItem {
@@ -131,7 +132,7 @@ export default function FavoritesPage() {
                         {item.product?.name || '商品已下架'}
                       </h3>
                       <p className="text-sm text-muted-foreground">
-                        {item.product?.creatorName || '匿名创作者'}
+                        {stripEmailFromName(item.product?.creatorName) || '匿名创作者'}
                       </p>
                       <div className="flex items-center justify-between mt-4">
                         <span className="text-lg font-bold text-primary">

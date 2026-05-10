@@ -28,6 +28,28 @@ export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * 从用户名显示文本中去除邮箱部分，只保留用户名。
+ * 兼容以下几种常见格式：
+ *  - "张三 <zhangsan@example.com>" -> "张三"
+ *  - "张三 (zhangsan@example.com)" -> "张三"
+ *  - "zhangsan@example.com"            -> "zhangsan"
+ *  - "张三"                            -> "张三"
+ */
+export function stripEmailFromName(name?: string | null): string {
+  if (!name) return '';
+  const s = String(name).trim();
+  if (!s) return '';
+  // 格式：Name <email> 或 Name (email)
+  const bracket = s.match(/^(.+?)\s*[<(][^<>()\s]+@[^<>()\s]+[>)]\s*$/);
+  if (bracket) return bracket[1].trim();
+  // 纯邮箱（如 user@x.com）：取 @ 前部分
+  if (/^\S+@\S+\.[^\s@]+$/.test(s)) {
+    return s.split('@')[0];
+  }
+  return s;
+}
+
 export function generateId(): string {
   return Math.random().toString(36).substring(2, 15);
 }

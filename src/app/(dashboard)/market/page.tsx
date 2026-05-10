@@ -56,7 +56,7 @@ import {
   type Comment,
 } from '@/lib/parse-actions';
 import toast from 'react-hot-toast';
-import { cn, copyText } from '@/lib/utils';
+import { cn, copyText, stripEmailFromName } from '@/lib/utils';
 import { mockTransfer, transferWithMetaMask, transferWithPrivateKey, hasExternalWallet } from '@/lib/web3-client';
 import { ProductDetailDialog } from '@/components/product-detail-dialog';
 
@@ -168,13 +168,23 @@ export default function MarketPage() {
   };
 
   const handlePurchase = async (product: Product) => {
-    if (!user?.web3Address) {
-      toast.error('请先登录Web3账户');
+    if (!user) {
+      toast.error('请先登录');
       return;
     }
-    // 比较地址时统一转为小写，避免大小写导致的问题
-    if (product.owner?.toLowerCase() === user.web3Address.toLowerCase()) {
+    // 先判断是否是自己的商品（兼容 creatorId 与 Web3 owner 地址匹配）
+    const isOwnProduct =
+      (!!product.creatorId && !!user.objectId && product.creatorId === user.objectId) ||
+      (!!product.owner &&
+        !!user.web3Address &&
+        product.owner.toLowerCase() === user.web3Address.toLowerCase());
+    if (isOwnProduct) {
       toast.error('不能购买自己的商品');
+      return;
+    }
+    // 再检查 Web3 钱包是否绑定
+    if (!user.web3Address) {
+      toast.error('请先绑定 Web3 钱包再购买');
       return;
     }
     if (!confirm(`确定要购买「${product.name}」吗？\n价格: ¥${product.price}\n支付方式: Web3转账`)) {
@@ -367,7 +377,7 @@ export default function MarketPage() {
       toast.error('请先登录');
       return;
     }
-    const result = await initMarketMockProducts(user.web3Address || user.objectId);
+    const result = await initMarketMockProducts(user.web3Address || user.objectId, user.objectId, user.username);
     if (result.success) {
       toast.success(result.message || '创建成功');
       fetchProducts();
@@ -497,7 +507,7 @@ export default function MarketPage() {
                 </div>
                 <CardContent className="p-4">
                   <h3 className="truncate font-medium hover:text-primary cursor-pointer" onClick={() => { setDetailProduct(product); setDetailDialogOpen(true); }}>{product.name}</h3>
-                  <p className="mt-1 text-sm text-muted-foreground">{product.creatorName || '匿名创作者'}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{(product.creatorId && user?.objectId && product.creatorId === user.objectId) || (product.owner && user?.web3Address && product.owner.toLowerCase() === user.web3Address.toLowerCase()) ? '当前用户' : (stripEmailFromName(product.creatorName) || '匿名创作者')}</p>
                   <div className="mt-2 flex items-center gap-1 text-sm text-muted-foreground">
                     <span>{product.sales || 0} 销量</span><span>|</span><span>{product.favoriteCount || 0} 收藏</span><span>|</span><span>{product.commentCount || 0} 评论</span><span>|</span><span>{product.likeCount || 0} 赞</span>
                   </div>

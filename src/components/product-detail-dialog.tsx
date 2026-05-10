@@ -30,7 +30,7 @@ import {
 } from 'lucide-react';
 import { type Product } from '@/lib/parse-actions';
 import { rateProduct, getUserRating } from '@/lib/parse-actions';
-import { cn, copyText } from '@/lib/utils';
+import { cn, copyText, stripEmailFromName } from '@/lib/utils';
 import { StarRating } from '@/components/ui/star-rating';
 import { useAuthStore } from '@/store';
 import toast from 'react-hot-toast';
@@ -207,13 +207,21 @@ export function ProductDetailDialog({
 
           {/* 创作者信息 */}
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-sm font-medium">
-              {(product.creatorName || '匿名')[0]}
-            </div>
-            <div>
-              <p className="font-medium">{product.creatorName || '匿名创作者'}</p>
-              <p className="text-sm text-muted-foreground">创作者</p>
-            </div>
+            {(() => {
+              const displayName = stripEmailFromName(product.creatorName) || '匿名';
+              const fullName = displayName || '匿名创作者';
+              return (
+                <>
+                  <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-sm font-medium">
+                    {displayName[0] || '匿'}
+                  </div>
+                  <div>
+                    <p className="font-medium">{fullName}</p>
+                    <p className="text-sm text-muted-foreground">创作者</p>
+                  </div>
+                </>
+              );
+            })()}
           </div>
 
           {/* 描述 */}

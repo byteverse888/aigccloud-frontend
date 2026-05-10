@@ -50,8 +50,11 @@ export const useAuthStore = create<AuthState>()(
       setUser: (user: StoreUser | null) => {
         set({ user, isAuthenticated: !!user, isLoading: false });
         // 登录/切换用户：切换购物车属主，自动从后端拉取数据
+        // 管理/运营平台用户（admin / operator）不使用购物车，避免触发 /assets/cart 404
         try {
-          void useCartStore.getState().setOwner(user?.objectId ?? null);
+          const role = user?.role;
+          const isBackendUser = role === 'admin' || role === 'operator';
+          void useCartStore.getState().setOwner(isBackendUser ? null : (user?.objectId ?? null));
         } catch {
           // 忽略初始化期异常
         }
@@ -72,8 +75,11 @@ export const useAuthStore = create<AuthState>()(
       name: 'auth-storage',
       // persist 恢复后：若已登录，触发一次购物车拉取，保证刷新页面后购物车能恢复
       onRehydrateStorage: () => (state) => {
-        const userId = state?.user?.objectId ?? null;
-        if (userId) {
+        const u = state?.user;
+        const userId = u?.objectId ?? null;
+        const role = u?.role;
+        const isBackendUser = role === 'admin' || role === 'operator';
+        if (userId && !isBackendUser) {
           try {
             void useCartStore.getState().setOwner(userId);
           } catch {
